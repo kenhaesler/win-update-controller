@@ -39,6 +39,7 @@
       "icons/128x128.png"
     ],
     "resources": {
+      "../LICENSE": "LICENSE",
       "helper/": "helper/"
     },
     "windows": {

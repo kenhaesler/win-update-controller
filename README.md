@@ -4,9 +4,15 @@ A Windows desktop app for understanding available updates and deliberately choos
 
 ![Implemented frontend in preview mode](docs/frontend-implemented.png)
 
+## License and use at your own risk
+
+Licensed under the [MIT License](LICENSE). The software is provided **as is, without warranty**. To the extent permitted by applicable law, the authors and copyright holders disclaim liability for claims, damages, or other liability arising from its use.
+
+This app changes Windows Update policy and can download and install system updates. Use it at your own risk: changes can cause instability, data loss, or reduced security if updates are deferred. Keep backups and review the [validation limitations](docs/VALIDATION.md) before use. There is no guarantee that the app will prevent every automatic update or restart. Third-party components retain their own licenses.
+
 ## Run
 
-The delivery copy is at `release/Update Controller_0.1.1_x64-setup.exe`, with `release/SHA256SUMS.txt`. Rebuilding produces `src-tauri/target/release/bundle/nsis/Update Controller_0.1.1_x64-setup.exe`. Install it and open **Update Controller** from Start. Installation goes to Program Files and requires administrator access. The UI itself runs unelevated. This local development release is unsigned.
+Download the installer and checksum from the [latest GitHub release](https://github.com/kenhaesler/win-update-controller/releases/latest). Rebuilding produces `src-tauri/target/release/bundle/nsis/Update Controller_0.1.1_x64-setup.exe`. Install it and open **Update Controller** from Start. Installation goes to Program Files and requires administrator access. The UI itself runs unelevated. This development release is unsigned.
 
 1. Open **Settings** and inspect the current policy and pending-restart status.
 2. Choose **Enable manual mode** to back up the current policy and configure manual updating.
