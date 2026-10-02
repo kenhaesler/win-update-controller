@@ -1,4 +1,38 @@
 import { test, expect } from "@playwright/test";
+test("hidden updates stay excluded across checks and can be restored", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page.getByRole("checkbox", { name: "Select Display driver" }).check();
+  await page
+    .getByRole("button", { name: "Hide selected", exact: true })
+    .click();
+  await expect(page.getByRole("status")).toContainText("1 update hidden");
+  await expect(
+    page.getByRole("checkbox", { name: "Select Display driver" }),
+  ).toHaveCount(0);
+  await page
+    .getByRole("button", { name: "Check for updates", exact: true })
+    .click();
+  await expect(page.getByRole("status")).toContainText("Found 2 available");
+  await page.getByRole("button", { name: "Hidden", exact: true }).click();
+  await page.getByRole("checkbox", { name: "Select Display driver" }).check();
+  await expect(
+    page.getByRole("button", { name: "Download selected" }),
+  ).toHaveCount(0);
+  await page.getByRole("button", { name: "Restore selected" }).click();
+  await expect(page.getByRole("status")).toContainText("1 update restored");
+  await expect(
+    page.getByRole("heading", { name: "No hidden updates" }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "All", exact: true }).click();
+  await expect(
+    page.getByRole("checkbox", { name: "Select Display driver" }),
+  ).not.toBeChecked();
+  await expect(
+    page.getByRole("button", { name: "Download selected" }),
+  ).toBeDisabled();
+});
 test("reading and checking never select or install packages", async ({
   page,
 }) => {

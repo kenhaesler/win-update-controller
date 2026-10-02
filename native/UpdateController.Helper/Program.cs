@@ -48,7 +48,7 @@ internal static class Program
             if (line.Length > 100_000) throw new ArgumentException("Request too large.");
             var request = JsonSerializer.Deserialize<Request>(line, Protocol.Json) ?? throw new ArgumentException("Invalid request.");
             Protocol.Validate(request);
-            if (request.Command is "download" or "install" or "enableManual" or "restorePolicy")
+            if (request.Command is "download" or "install" or "hide" or "unhide" or "enableManual" or "restorePolicy")
                 Console.WriteLine(Elevate(request));
             else Console.WriteLine(Execute(request));
             return 0;
@@ -66,6 +66,7 @@ internal static class Program
             {
                 "status" => WindowsUpdates.Status(), "scan" => WindowsUpdates.Scan(), "history" => WindowsUpdates.History(), "notes" => ReleaseNotes.Fetch(request),
                 "review" => WindowsUpdates.Prepare(request), "enableManual" => Policy.Enable(), "restorePolicy" => Policy.Restore(),
+                "hide" or "unhide" => WindowsUpdates.SetHidden(request),
                 "download" or "install" => WindowsUpdates.Run(request), _ => throw new ArgumentException("Unknown operation.")
             };
             return Protocol.Serialize(new { ok = true, data = result });

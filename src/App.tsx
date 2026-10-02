@@ -125,12 +125,15 @@ export default function App() {
   const focusIntent = useRef<"detail" | "list" | null>(null);
   const reduceMotion = useReducedMotion();
   const packages = scan?.updates ?? [];
-  const active = packages.find((u) => u.id === activeId);
-  const selection = packages.filter((u) => selected.has(u.id));
+  const hiddenView = filter === "Hidden";
+  const visiblePackages = packages.filter((u) => !!u.hidden === hiddenView);
+  const active = visiblePackages.find((u) => u.id === activeId);
+  const selection = visiblePackages.filter((u) => selected.has(u.id));
   const action = selectedAction(selection);
-  const filtered = packages.filter(
+  const filtered = visiblePackages.filter(
     (u) =>
       (filter === "All" ||
+        filter === "Hidden" ||
         u.category === filter ||
         (filter === "Optional" && u.category === "Drivers")) &&
       `${u.title} ${u.kbIds.join(" ")}`
@@ -235,13 +238,14 @@ export default function App() {
   async function check() {
     await run("Checking for updates…", async () => {
       const result = await api.scan();
+      const available = result.updates.filter((u) => !u.hidden);
       saveScan(result);
       setSelected(new Set());
       setActiveId(result.updates[0]?.id ?? null);
       setStatus(await api.status());
       setNotice(
-        result.updates.length
-          ? `Found ${result.updates.length} available update${result.updates.length === 1 ? "" : "s"}. Nothing was downloaded or installed.`
+        available.length
+          ? `Found ${available.length} available update${available.length === 1 ? "" : "s"}. Nothing was downloaded or installed.`
           : "Windows reports no available updates.",
       );
     });
@@ -255,6 +259,7 @@ export default function App() {
     });
   }
   async function beginReview() {
+    if (hiddenView || selection.some((u) => u.hidden)) return;
     dialogInvoker.current = document.activeElement as HTMLElement;
     await run("Preparing your selection…", async () => {
       setAccepted(false);
@@ -267,6 +272,41 @@ export default function App() {
         ),
       );
     });
+  }
+  async function changeHidden() {
+    const hidden = !hiddenView;
+    await run(
+      hidden ? "Hiding selected updates…" : "Restoring hidden updates…",
+      async () => {
+        const result = await api.setHidden(selection, hidden);
+        const succeeded = result.results.filter((r) => r.success);
+        if (scan)
+          saveScan({
+            ...scan,
+            updates: packages.map((u) =>
+              succeeded.some((r) => r.id === u.id && r.revision === u.revision)
+                ? { ...u, hidden }
+                : u,
+            ),
+          });
+        setSelected(new Set());
+        setActiveId(null);
+        setShowDetail(false);
+        const failures = result.results.filter((r) => !r.success);
+        setNotice(
+          `${succeeded.length} update${succeeded.length === 1 ? "" : "s"} ${hidden ? "hidden" : "restored"}. Nothing was downloaded or installed.`,
+        );
+        if (failures.length)
+          setError(
+            failures
+              .map(
+                (r) =>
+                  `${packages.find((u) => u.id === r.id)?.title ?? r.id}: ${r.error}`,
+              )
+              .join(" "),
+          );
+      },
+    );
   }
   function openPolicyReview(kind: "enable" | "restore") {
     dialogInvoker.current = document.activeElement as HTMLElement;
@@ -450,11 +490,14 @@ export default function App() {
       <main className="workspace">
         {tab === "Updates" && (
           <div className={`updates-view ${showDetail ? "show-detail" : ""}`}>
-            <section className="package-pane" aria-label="Available updates">
+            <section
+              className="package-pane"
+              aria-label={hiddenView ? "Hidden updates" : "Available updates"}
+            >
               <div className="list-heading">
                 <div className="heading-line">
-                  <h1>Available updates</h1>
-                  <span className="count">{packages.length}</span>
+                  <h1>{hiddenView ? "Hidden updates" : "Available updates"}</h1>
+                  <span className="count">{visiblePackages.length}</span>
                 </div>
                 <p className="muted">
                   {preview
@@ -465,16 +508,23 @@ export default function App() {
                 </p>
               </div>
               <div className="filters" aria-label="Filter updates">
-                {["All", "Security", "Drivers", "Optional"].map((f) => (
-                  <button
-                    key={f}
-                    className={`filter ${filter === f ? "selected" : ""}`}
-                    aria-pressed={filter === f}
-                    onClick={() => setFilter(f)}
-                  >
-                    {f}
-                  </button>
-                ))}
+                {["All", "Security", "Drivers", "Optional", "Hidden"].map(
+                  (f) => (
+                    <button
+                      key={f}
+                      className={`filter ${filter === f ? "selected" : ""}`}
+                      aria-pressed={filter === f}
+                      disabled={!!busy}
+                      onClick={() => {
+                        setFilter(f);
+                        setSelected(new Set());
+                        setActiveId(null);
+                      }}
+                    >
+                      {f}
+                    </button>
+                  ),
+                )}
               </div>
               {packages.length > 5 && (
                 <label className="search">
@@ -554,18 +604,22 @@ export default function App() {
                   <div className="empty-state">
                     <PackageOpen size={34} strokeWidth={1.3} />
                     <h2>
-                      {packages.length
-                        ? "No matching updates"
-                        : scan
-                          ? "You’re all caught up"
-                          : "Start with a check"}
+                      {hiddenView
+                        ? "No hidden updates"
+                        : visiblePackages.length
+                          ? "No matching updates"
+                          : scan
+                            ? "You’re all caught up"
+                            : "Start with a check"}
                     </h2>
                     <p>
-                      {packages.length
-                        ? "Try another filter or search term."
-                        : scan
-                          ? "Windows reports no available packages from the last check."
-                          : "See available packages and read what they change. Nothing installs when you check."}
+                      {hiddenView
+                        ? "Hidden updates appear here after a check. Restore them whenever you want."
+                        : visiblePackages.length
+                          ? "Try another filter or search term."
+                          : scan
+                            ? "Windows reports no available packages from the last check."
+                            : "See available packages and read what they change. Nothing installs when you check."}
                     </p>
                     {!scan && (
                       <button
@@ -581,7 +635,12 @@ export default function App() {
               </div>
               <div className="list-footnote">
                 <Info size={15} />
-                <span>Nothing downloads or installs when you check.</span>
+                <span>
+                  Hide selected updates to keep them out of future checks and
+                  installations. Restore them under Hidden. New replacement
+                  updates may still appear. Windows may request administrator
+                  access.
+                </span>
               </div>
             </section>
             <section className="detail-pane" aria-label="Update details">
@@ -981,28 +1040,39 @@ export default function App() {
             )}
           </div>
           <div className="action-right">
-            <span className="muted action-hint">
-              {selection.length
-                ? action === "install"
-                  ? "Review before installing"
-                  : "Installation is a separate step"
-                : "Select a checkbox to download"}
-            </span>
             <button
-              ref={actionRef}
-              className={`button ${selection.length ? "primary" : "outline"}`}
+              className="button outline"
               disabled={!selection.length || !!busy}
-              onClick={beginReview}
+              onClick={changeHidden}
             >
-              {action === "download" ? (
-                <Download size={17} />
-              ) : (
-                <ShieldCheck size={17} />
-              )}{" "}
-              {action === "download"
-                ? "Download selected"
-                : "Review installation"}
+              {hiddenView ? "Restore selected" : "Hide selected"}
             </button>
+            <span className="muted action-hint">
+              {hiddenView
+                ? "Restore to make updates available again"
+                : selection.length
+                  ? action === "install"
+                    ? "Review before installing"
+                    : "Installation is a separate step"
+                  : "Select a checkbox to download"}
+            </span>
+            {!hiddenView && (
+              <button
+                ref={actionRef}
+                className={`button ${selection.length ? "primary" : "outline"}`}
+                disabled={!selection.length || !!busy}
+                onClick={beginReview}
+              >
+                {action === "download" ? (
+                  <Download size={17} />
+                ) : (
+                  <ShieldCheck size={17} />
+                )}{" "}
+                {action === "download"
+                  ? "Download selected"
+                  : "Review installation"}
+              </button>
+            )}
           </div>
         </section>
       )}
@@ -1026,7 +1096,7 @@ export default function App() {
           {preview
             ? "Sample data · No system changes"
             : "No automatic restarts"}
-          <span className="footer-version">v0.1.1</span>
+          <span className="footer-version">v0.1.2</span>
         </span>
       </footer>
       <dialog

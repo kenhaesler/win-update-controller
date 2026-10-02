@@ -7,6 +7,15 @@ Reject(new Request("shell"));
 Reject(new Request("download", [new("bad' or IsInstalled=0", 1)], ReviewToken:"x"));
 Reject(new Request("install", []));
 var identity = new UpdateRef(Guid.NewGuid().ToString(), 1);
+foreach (var command in new[] { "hide", "unhide" })
+{
+    Reject(new Request(command, []));
+    Reject(new Request(command, [new("bad' or IsInstalled=0", 1)]));
+    Reject(new Request(command, [identity, identity]));
+    Reject(new Request(command, [identity with { Revision = -1 }]));
+    Reject(new Request(command, Enumerable.Range(0, 101).Select(_ => new UpdateRef(Guid.NewGuid().ToString(), 1)).ToArray()));
+    Protocol.Validate(new Request(command, [identity])); tests++;
+}
 Reject(new Request("install", [identity]));
 Reject(new Request("review", [identity, identity], Action:"install"));
 Reject(new Request("review", [identity], Action:"reboot"));

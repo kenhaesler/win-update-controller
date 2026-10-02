@@ -110,3 +110,78 @@ test("dark and light primary surfaces meet automated accessibility checks", asyn
     ).toEqual([]);
   }
 });
+
+test("native hide partial failures preserve failed packages and cache successes", async ({
+  page,
+}) => {
+  await page.addInitScript(
+    ({ status, scan }) => {
+      const state = window as unknown as {
+        isTauri: boolean;
+        __TAURI_INTERNALS__: object;
+        __TAURI_EVENT_PLUGIN_INTERNALS__: object;
+      };
+      state.isTauri = true;
+      state.__TAURI_EVENT_PLUGIN_INTERNALS__ = { unregisterListener: () => {} };
+      if (!localStorage.getItem("update-controller.scan.v1"))
+        localStorage.setItem("update-controller.scan.v1", JSON.stringify(scan));
+      state.__TAURI_INTERNALS__ = {
+        transformCallback: () => 1,
+        unregisterCallback: () => {},
+        invoke: async (
+          cmd: string,
+          args: {
+            request?: {
+              command: string;
+              updates: { id: string; revision: number }[];
+            };
+          },
+        ) => {
+          if (cmd !== "windows_request") return 1;
+          if (args.request?.command === "status") return status;
+          if (args.request?.command === "hide")
+            return {
+              results: args.request.updates.map((u, i) => ({
+                ...u,
+                success: i === 0,
+                error: i === 0 ? null : "Windows refused this update.",
+              })),
+            };
+          throw new Error("Unexpected operation");
+        },
+      };
+    },
+    { status: demoStatus, scan: demoScan },
+  );
+  await page.goto("/");
+  await page
+    .getByRole("checkbox", { name: "Select Windows security update" })
+    .check();
+  await page.getByRole("checkbox", { name: "Select Display driver" }).check();
+  await page.getByRole("button", { name: "Hide selected" }).click();
+  await expect(page.getByRole("status")).toContainText("1 update hidden");
+  await expect(page.getByRole("alert")).toContainText(
+    "Display driver: Windows refused",
+  );
+  await expect(
+    page.getByRole("checkbox", { name: "Select Display driver" }),
+  ).not.toBeChecked();
+  await page.reload();
+  await expect(
+    page.getByRole("checkbox", { name: "Select Windows security update" }),
+  ).toHaveCount(0);
+  await page.getByRole("button", { name: "Hidden", exact: true }).click();
+  await expect(
+    page.getByRole("checkbox", { name: "Select Windows security update" }),
+  ).toBeVisible();
+  await page.screenshot({
+    path: "test-results/hidden-updates.png",
+    fullPage: true,
+  });
+  await page.setViewportSize({ width: 700, height: 800 });
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
+});

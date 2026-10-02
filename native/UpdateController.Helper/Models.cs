@@ -6,7 +6,7 @@ namespace UpdateController;
 
 public record UpdateRef(string Id, int Revision);
 public record Request(string Command, UpdateRef[]? Updates = null, string? Action = null, string? ReviewToken = null, bool AcceptLicenses = false, string? Url = null, string[]? KbIds = null);
-public record Package(string Id, int Revision, string Title, string Description, string Category, string[] KbIds, string[] SupportUrls, string Date, decimal Size, bool Downloaded, string Restart, bool Exclusive, bool EulaAccepted, string[] Bundles);
+public record Package(string Id, int Revision, string Title, string Description, string Category, string[] KbIds, string[] SupportUrls, string Date, decimal Size, bool Downloaded, string Restart, bool Exclusive, bool EulaAccepted, string[] Bundles, bool Hidden = false);
 public record License(string Title, string Text);
 public record Review(Package[] Updates, License[] Licenses, string ReviewToken, string Action);
 public record PolicySnapshot(bool Existed, int? Value, string State, string CreatedAt);
@@ -18,9 +18,9 @@ public static class Protocol
     public static string Serialize(object? value) => JsonSerializer.Serialize(value, Json);
     public static void Validate(Request request)
     {
-        if (!new[] { "status", "scan", "history", "review", "notes", "download", "install", "enableManual", "restorePolicy" }.Contains(request.Command))
+        if (!new[] { "status", "scan", "history", "review", "notes", "download", "install", "hide", "unhide", "enableManual", "restorePolicy" }.Contains(request.Command))
             throw new ArgumentException("Unknown operation.");
-        if (request.Command is "review" or "download" or "install")
+        if (request.Command is "review" or "download" or "install" or "hide" or "unhide")
         {
             if (request.Updates is not { Length: > 0 and <= 100 }) throw new ArgumentException("Select between 1 and 100 update packages.");
             if (request.Updates.Any(x => !Guid.TryParse(x.Id, out _) || x.Revision < 0)) throw new ArgumentException("Invalid update identity.");

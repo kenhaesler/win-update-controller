@@ -10,6 +10,7 @@ export interface UpdatePackage {
   date: string;
   size: number;
   downloaded: boolean;
+  hidden?: boolean;
   restart: string;
   exclusive: boolean;
   eulaAccepted: boolean;

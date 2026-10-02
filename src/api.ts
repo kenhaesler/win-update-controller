@@ -19,6 +19,36 @@ const request = <T>(data: object) =>
   invoke<T>("windows_request", { request: data });
 const delay = () => new Promise<void>((resolve) => setTimeout(resolve, 550));
 export const api = {
+  setHidden: async (
+    items: UpdatePackage[],
+    hidden: boolean,
+  ): Promise<{
+    results: {
+      id: string;
+      revision: number;
+      success: boolean;
+      error: string | null;
+    }[];
+  }> => {
+    if (!preview)
+      return request({
+        command: hidden ? "hide" : "unhide",
+        updates: refs(items),
+      });
+    await delay();
+    const ids = new Set(items.map((u) => u.id));
+    sampleScan.updates = sampleScan.updates.map((u) =>
+      ids.has(u.id) ? { ...u, hidden } : u,
+    );
+    return {
+      results: items.map((u) => ({
+        id: u.id,
+        revision: u.revision,
+        success: true,
+        error: null,
+      })),
+    };
+  },
   status: async (): Promise<SystemStatus> =>
     preview ? structuredClone(sampleStatus) : request({ command: "status" }),
   scan: async (): Promise<ScanResult> => {

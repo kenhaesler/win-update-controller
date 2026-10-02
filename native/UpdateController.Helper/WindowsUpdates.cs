@@ -52,18 +52,46 @@ public static class WindowsUpdates
         return new Package((string)update.Identity.UpdateID, (int)update.Identity.RevisionNumber, (string)update.Title, (string)update.Description,
             category, kb.ToArray(), urls.Distinct().ToArray(), ((DateTime)update.LastDeploymentChangeTime).ToUniversalTime().ToString("O"),
             Convert.ToDecimal((object)update.MaxDownloadSize), (bool)update.IsDownloaded, reboot switch { 0 => "Not expected", 1 => "Required", _ => "May be required" },
-            (int)update.InstallationBehavior.Impact == 2, (bool)update.EulaAccepted, bundles.ToArray());
+            (int)update.InstallationBehavior.Impact == 2, (bool)update.EulaAccepted, bundles.ToArray(), (bool)update.IsHidden);
     }
     public static object Scan()
     {
         dynamic session = Session();
         dynamic searcher = session.CreateUpdateSearcher();
         searcher.Online = true;
-        dynamic result = searcher.Search("IsInstalled=0 and IsHidden=0");
+        dynamic result = searcher.Search("IsInstalled=0 and IsHidden=0 or IsInstalled=0 and IsHidden=1");
         if ((int)result.ResultCode != 2) throw new Exception("Windows could not complete the update search. Try checking again.");
         var updates = new List<Package>();
         for (int i = 0; i < result.Updates.Count; i++) updates.Add(Map(result.Updates.Item(i)));
         return new { updates, checkedAt = Now() };
+    }
+    public static object SetHidden(Request request)
+    {
+        bool hidden = request.Command == "hide";
+        dynamic searcher = Session().CreateUpdateSearcher();
+        searcher.Online = false;
+        var results = new List<object>();
+        foreach (var item in request.Updates!)
+        {
+            try
+            {
+                // Resolve the exact identity in either state, making retries idempotent.
+                string identity = $"UpdateID='{item.Id}' and RevisionNumber={item.Revision} and IsInstalled=0";
+                dynamic found = searcher.Search($"{identity} and IsHidden=0 or {identity} and IsHidden=1");
+                if ((int)found.ResultCode != 2 || found.Updates.Count != 1)
+                    throw new Exception("Update is no longer available. Check for updates again.");
+                dynamic update = found.Updates.Item(0);
+                if (hidden && (bool)update.IsMandatory) throw new Exception("Windows does not allow hiding this mandatory update.");
+                update.IsHidden = hidden;
+                if ((bool)update.IsHidden != hidden) throw new Exception("Windows did not retain the requested hidden state.");
+                results.Add(new { item.Id, item.Revision, success = true, error = (string?)null });
+            }
+            catch (Exception ex)
+            {
+                results.Add(new { item.Id, item.Revision, success = false, error = ex.Message });
+            }
+        }
+        return new { results };
     }
     static dynamic Resolve(UpdateRef[] selected)
     {

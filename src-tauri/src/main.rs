@@ -31,6 +31,8 @@ async fn windows_request(app: tauri::AppHandle, request: Value) -> Result<Value,
         "notes",
         "download",
         "install",
+        "hide",
+        "unhide",
         "enableManual",
         "restorePolicy",
     ]
@@ -38,7 +40,7 @@ async fn windows_request(app: tauri::AppHandle, request: Value) -> Result<Value,
     {
         return Err("Unsupported operation".into());
     }
-    let mutation = ["download", "install", "enableManual", "restorePolicy"].contains(&command);
+    let mutation = ["download", "install", "hide", "unhide", "enableManual", "restorePolicy"].contains(&command);
     let state = app.state::<OperationLock>();
     if mutation && state.0.swap(true, Ordering::SeqCst) {
         return Err("Another operation is running".into());

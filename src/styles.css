@@ -388,6 +388,7 @@ svg {
   font-size: 13px;
 }
 .filters {
+  flex-wrap: wrap;
   display: flex;
   align-items: center;
   gap: 9px;
