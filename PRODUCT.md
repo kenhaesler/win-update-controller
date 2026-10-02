@@ -11,7 +11,7 @@ User selected Tauri + React. TypeScript, Vite, CSS/Tailwind, Motion. A narrowly 
 A personal Windows PC owner who wants quick ordinary reboots without unapproved background installations, and wants to understand update changes before choosing packages to install.
 
 ## Confirmed workflow
-Check and read without downloading or installing. Explicitly select, download, review, and install. Never automatically reboot. Explain package changes and link official notes. Manual-mode policy changes must be reversible. Existing pending restarts must be reported honestly.
+By default, check and read without downloading or installing, then explicitly select, download, review, and install. Users may opt into startup checks and automatic installation of eligible Defender updates with no restart requirement; all other packages retain deliberate review. Check for newer controller releases on startup and suggest an update. Never automatically reboot. Explain package changes and link official notes. Manual-mode policy changes must be reversible. Existing pending restarts must be reported honestly.
 
 ## Visual commitment
 The user approved the generated graphite Windows desktop mockup and asked to build the app like it. Preserve its master-detail layout, top control status, compact navigation, subtle glass title bar, blue accent, and bottom action bar. Dark and light themes.

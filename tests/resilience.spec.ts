@@ -33,9 +33,11 @@ test("native failures keep status truthful and history retryable", async ({
       const state = window as unknown as {
         isTauri: boolean;
         __TAURI_INTERNALS__: object;
+        __TAURI_EVENT_PLUGIN_INTERNALS__: object;
         commands: string[];
       };
       state.isTauri = true;
+      state.__TAURI_EVENT_PLUGIN_INTERNALS__ = { unregisterListener: () => {} };
       state.commands = [];
       localStorage.setItem("update-controller.scan.v1", JSON.stringify(scan));
       state.__TAURI_INTERNALS__ = {

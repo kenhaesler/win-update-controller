@@ -31,7 +31,15 @@ import {
   policyLabel,
   preview,
   selectedAction,
+  openControllerRelease,
 } from "./api";
+import { version as appVersion } from "../package.json";
+import {
+  loadPreferences,
+  newerVersion,
+  preferenceKey,
+  type Preferences,
+} from "./preferences";
 import { demoScan } from "./demo";
 import ReleaseNotes from "./ReleaseNotes";
 import type {
@@ -106,6 +114,13 @@ export default function App() {
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [preferences, setPreferences] = useState(loadPreferences);
+  const [release, setRelease] = useState<string | null>(null);
+  const [releaseStatus, setReleaseStatus] = useState("Not checked yet.");
+  const [releaseBusy, setReleaseBusy] = useState(false);
+  const started = useRef(false);
+  const operationActive = useRef(false);
+  const releaseActive = useRef(false);
   const [history, setHistory] = useState<HistoryResult | null>(null);
   const [historyError, setHistoryError] = useState<string | null>(null);
   const [review, setReview] = useState<UpdateReview | null>(null);
@@ -145,6 +160,44 @@ export default function App() {
     document.documentElement.dataset.theme = theme;
     localStorage.setItem("update-controller.theme", theme);
   }, [theme]);
+  useEffect(() => {
+    if (started.current) return;
+    started.current = true;
+    if (preferences.controllerUpdates) void checkController();
+    if (preferences.startupScan) void check();
+  }, []);
+  function changePreference(key: keyof Preferences, value: boolean) {
+    const next = { ...preferences, [key]: value };
+    try {
+      localStorage.setItem(preferenceKey, JSON.stringify(next));
+      setPreferences(next);
+    } catch {
+      setError("Could not save preferences. The setting was not changed.");
+    }
+  }
+  async function checkController() {
+    if (releaseActive.current) return;
+    releaseActive.current = true;
+    setReleaseBusy(true);
+    setReleaseStatus("Checking GitHub releases…");
+    try {
+      const latest = await api.appRelease();
+      const newer = newerVersion(latest.version, appVersion);
+      setRelease(newer ? latest.version : null);
+      setReleaseStatus(
+        newer
+          ? `Version ${latest.version} is available.`
+          : `Version ${appVersion} is up to date.${preview ? " Preview only." : ""}`,
+      );
+    } catch (e) {
+      setReleaseStatus(
+        `Could not check controller updates: ${String(e)} Try again.`,
+      );
+    } finally {
+      releaseActive.current = false;
+      setReleaseBusy(false);
+    }
+  }
   useEffect(() => {
     let alive = true;
     const read = () =>
@@ -218,7 +271,8 @@ export default function App() {
     };
   }, []);
   async function run(label: string, work: () => Promise<void>) {
-    if (busy) return;
+    if (operationActive.current) return;
+    operationActive.current = true;
     setBusy(label);
     setError(null);
     setNotice(null);
@@ -227,13 +281,19 @@ export default function App() {
     } catch (e) {
       setError(String(e));
     } finally {
+      operationActive.current = false;
       setBusy(null);
     }
   }
   function saveScan(next: ScanResult) {
     setScan(next);
-    if (!preview)
-      localStorage.setItem("update-controller.scan.v1", JSON.stringify(next));
+    if (!preview) {
+      try {
+        localStorage.setItem("update-controller.scan.v1", JSON.stringify(next));
+      } catch {
+        /* A cache failure must not hide the live scan result. */
+      }
+    }
   }
   async function check() {
     await run("Checking for updates…", async () => {
@@ -242,10 +302,29 @@ export default function App() {
       saveScan(result);
       setSelected(new Set());
       setActiveId(result.updates[0]?.id ?? null);
-      setStatus(await api.status());
+      const currentStatus = await api.status();
+      setStatus(currentStatus);
+      const defender = available.filter((u) => u.autoInstallEligible === true);
+      if (preferences.autoDefender && defender.length) {
+        if (currentStatus.restartPending) {
+          setNotice(
+            "Defender automation skipped: Windows has a pending restart. Other updates remain available for review.",
+          );
+          return;
+        }
+        setBusy("Installing eligible Defender updates…");
+        const result = await api.autoDefender(defender);
+        setNotice(
+          `Defender automation: ${result.message ?? result.state}${result.restartRequired ? " Windows reported an unexpected restart requirement; the controller will not restart your PC." : ""}`,
+        );
+        saveScan(await api.scan());
+        setStatus(await api.status());
+        setHistory(await api.history());
+        return;
+      }
       setNotice(
         available.length
-          ? `Found ${available.length} available update${available.length === 1 ? "" : "s"}. Nothing was downloaded or installed.`
+          ? `Found ${available.length} available update${available.length === 1 ? "" : "s"}. Nothing was downloaded or installed.${preferences.autoDefender ? " No eligible Defender updates." : ""}`
           : "Windows reports no available updates.",
       );
     });
@@ -398,7 +477,9 @@ export default function App() {
               ? "Review the conflict in Settings."
               : status?.manualConfigured
                 ? preview
-                  ? "Updates wait for your approval."
+                  ? preferences.autoDefender
+                    ? "Defender automation enabled."
+                    : "Updates wait for your approval."
                   : "Policy configured. Review verification in Settings."
                 : status
                   ? "Enable manual mode in Settings."
@@ -448,6 +529,22 @@ export default function App() {
             Windows already has a restart pending. Manual mode cannot undo an
             update staged for restart.
           </span>
+        </div>
+      )}
+      {release && (
+        <div className="banner notice-banner">
+          <Download size={18} />
+          <span>
+            Update Controller {release} is available. You have {appVersion}.
+          </span>
+          <button
+            className="button outline"
+            onClick={() =>
+              void openControllerRelease().catch((e) => setError(String(e)))
+            }
+          >
+            View release
+          </button>
         </div>
       )}
       {error && (
@@ -619,7 +716,9 @@ export default function App() {
                           ? "Try another filter or search term."
                           : scan
                             ? "Windows reports no available packages from the last check."
-                            : "See available packages and read what they change. Nothing installs when you check."}
+                            : preferences.autoDefender
+                              ? "Check for available packages. Eligible Defender updates will be installed automatically."
+                              : "See available packages and read what they change. Nothing installs when you check."}
                     </p>
                     {!scan && (
                       <button
@@ -920,6 +1019,85 @@ export default function App() {
             </div>
             <div className="setting-row">
               <div>
+                <h2>Check Windows updates on startup</h2>
+                <p id="startup-help">
+                  Check each time you open the controller. Installation follows
+                  your Defender preference below; other updates wait for your
+                  selection.
+                </p>
+              </div>
+              <input
+                type="checkbox"
+                className="package-checkbox"
+                aria-label="Check Windows updates on startup"
+                aria-describedby="startup-help"
+                checked={preferences.startupScan}
+                disabled={!!busy}
+                onChange={(e) =>
+                  changePreference("startupScan", e.target.checked)
+                }
+              />
+            </div>
+            <div className="setting-row">
+              <div>
+                <h2>Automatically install Defender updates</h2>
+                <p id="defender-help">
+                  After each Windows update check, download and install eligible
+                  Defender security intelligence and platform updates that
+                  report no restart requirement. Runs only while the controller
+                  is open. Administrator approval may appear.
+                </p>
+                <p>
+                  Hidden updates, pending restarts, unaccepted licenses, and
+                  packages with uncertain restart behavior are skipped. Enable
+                  startup checks above to run this when the controller opens.
+                </p>
+              </div>
+              <input
+                type="checkbox"
+                className="package-checkbox"
+                aria-label="Automatically install Defender updates"
+                aria-describedby="defender-help"
+                checked={preferences.autoDefender}
+                disabled={!!busy}
+                onChange={(e) =>
+                  changePreference("autoDefender", e.target.checked)
+                }
+              />
+            </div>
+            <div className="setting-row">
+              <div>
+                <h2>Check for controller updates</h2>
+                <p id="controller-help">
+                  Check GitHub for a newer version when the controller opens.
+                  You choose whether to download and install it.
+                </p>
+                <p className="setting-state">
+                  Installed: {appVersion}. {releaseStatus}
+                </p>
+                <button
+                  className="text-link"
+                  disabled={releaseBusy}
+                  onClick={() => void checkController()}
+                >
+                  {releaseBusy
+                    ? "Checking controller…"
+                    : "Check controller now"}
+                </button>
+              </div>
+              <input
+                type="checkbox"
+                className="package-checkbox"
+                aria-label="Check for controller updates"
+                aria-describedby="controller-help"
+                checked={preferences.controllerUpdates}
+                onChange={(e) =>
+                  changePreference("controllerUpdates", e.target.checked)
+                }
+              />
+            </div>
+            <div className="setting-row">
+              <div>
                 <h2>Appearance</h2>
                 <p>A comfortable reading surface, day or night.</p>
               </div>
@@ -1096,7 +1274,7 @@ export default function App() {
           {preview
             ? "Sample data · No system changes"
             : "No automatic restarts"}
-          <span className="footer-version">v0.1.2</span>
+          <span className="footer-version">v{appVersion}</span>
         </span>
       </footer>
       <dialog

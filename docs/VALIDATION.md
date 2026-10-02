@@ -1,5 +1,13 @@
 # Validation and release status
 
+## 0.1.3 update automation
+
+2 October 2026. Added controller release suggestions, opt-in Windows update checks on startup, and opt-in installation of eligible Defender updates after checks. Defender eligibility is enforced in the elevated helper, including exact identities, accepted licenses, bundled components, pending restarts, and no-restart metadata.
+
+Validation: 13 frontend unit tests, 15 browser workflow/accessibility tests, and 71 backend assertions passed. Frontend and helper builds and Rust checking passed. A live read-only GitHub release check succeeded. Browser tests simulate native operations and cover persisted preferences, startup checks, eligible-only Defender selection, pending restarts, cancelled approval, and release suggestions. Actual Defender installation and installer upgrade/uninstall remain untested; no Windows updates or policy changes were performed during these checks.
+
+The older evidence below remains historical and does not certify these new servicing paths.
+
 12 September 2026 · Windows 11 Pro 25H2 · build 26200.9445 · x64.
 
 ## 0.1.1 administrator handshake fix

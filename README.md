@@ -12,16 +12,26 @@ This app changes Windows Update policy and can download and install system updat
 
 ## Run
 
-Download the installer and checksum from the [latest GitHub release](https://github.com/kenhaesler/win-update-controller/releases/latest). Rebuilding produces `src-tauri/target/release/bundle/nsis/Update Controller_0.1.2_x64-setup.exe`. Install it and open **Update Controller** from Start. Installation goes to Program Files and requires administrator access. The UI itself runs unelevated. This development release is unsigned.
+Download the installer and checksum from the [latest GitHub release](https://github.com/kenhaesler/win-update-controller/releases/latest). Rebuilding produces `src-tauri/target/release/bundle/nsis/Update Controller_0.1.3_x64-setup.exe`. Install it and open **Update Controller** from Start. Installation goes to Program Files and requires administrator access. The UI itself runs unelevated. This development release is unsigned.
 
 1. Open **Settings** and inspect the current policy and pending-restart status.
 2. Choose **Enable manual mode** to back up the current policy and configure manual updating.
-3. **Check for updates** retrieves metadata only; it never calls download or installation APIs.
+3. **Check for updates** retrieves metadata. With Defender automation off (the default), nothing is downloaded or installed.
 4. Open a package to read its description, restart requirement, and official Microsoft notes.
 5. Select checkboxes and **Download selected**. Review packages and any license terms.
 6. Select downloaded packages and choose **Review installation**. Installation is a separate deliberate action. The app never initiates a restart.
 
 To exclude unwanted packages such as monitor or USB drivers, select their checkboxes and choose **Hide selected**. Windows stores the hidden state across app and PC restarts. Use the **Hidden** filter and **Restore selected** to make them available again. Hide/restore requests administrator access and reports failures for each package; mandatory updates cannot be hidden. This applies to specific update identities, not every future driver for that device: a replacement published as a new update may appear. It cannot undo an installation already in progress or staged for restart. Hidden packages are excluded from the app's download and installation requests even if an older cached list still shows them.
+
+### Optional automation
+
+- **Check for controller updates** is enabled by default. On startup, a bounded GitHub release check compares the latest stable release with the installed version and suggests opening the release page. It does not download or run an installer. Settings also offers a manual check and reports network failures.
+- **Check Windows updates on startup** is off by default. Enable it to scan once whenever you open the controller.
+- **Automatically install Defender updates** is off by default. After each successful Windows update check, it downloads and installs eligible Microsoft Defender intelligence (KB2267602) and platform (KB4052623) packages. Enable startup checks too for automation on launch. There is no background service or periodic scan while the app is closed. UAC approval can still be required.
+
+Defender eligibility is checked again in the administrator helper before download and installation. Only software packages and bundled components with allowlisted KB identifiers, accepted licenses, no user-input requirement, no exclusive installation requirement, and Windows' `irbNeverReboots` metadata qualify. Unknown metadata and hidden packages are excluded. Pending restarts block automation. Partial downloads and cancelled elevation do not trigger installation or automatic retries. The controller never initiates a restart; any unexpected restart requirement reported by Windows is surfaced. See Microsoft's [Defender update identifiers](https://learn.microsoft.com/en-us/defender-endpoint/microsoft-defender-antivirus-updates) and [restart metadata](https://learn.microsoft.com/en-us/windows/win32/api/wuapi/ne-wuapi-installationrebootbehavior).
+
+Preferences are saved per Windows user in WebView local storage. Turning an option off affects future checks; an operation already submitted to Windows is allowed to finish.
 
 The hide/restore UI and protocol are covered by automated tests; live Windows hide/restore and reboot persistence have not been exercised on this PC.
 

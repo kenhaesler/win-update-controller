@@ -8,6 +8,7 @@ import type {
   Operation,
 } from "./types";
 import { demoScan, demoStatus, demoHistory } from "./demo";
+import { version } from "../package.json";
 
 export const preview = !isTauri();
 let sampleScan: ScanResult = structuredClone(demoScan);
@@ -19,6 +20,47 @@ const request = <T>(data: object) =>
   invoke<T>("windows_request", { request: data });
 const delay = () => new Promise<void>((resolve) => setTimeout(resolve, 550));
 export const api = {
+  appRelease: async (): Promise<{ version: string }> =>
+    preview ? { version } : request({ command: "appRelease" }),
+  autoDefender: async (items: UpdatePackage[]): Promise<Operation> => {
+    if (!preview)
+      return request({ command: "autoDefender", updates: refs(items) });
+    await delay();
+    if (items.some((u) => !u.autoInstallEligible || u.hidden))
+      throw new Error(
+        "Only eligible Defender updates can be installed automatically.",
+      );
+    sampleScan.updates = sampleScan.updates.filter(
+      (u) => !items.some((item) => item.id === u.id),
+    );
+    const op: Operation = {
+      id: crypto.randomUUID(),
+      action: "install",
+      state: "completed",
+      startedAt: new Date().toISOString(),
+      finishedAt: new Date().toISOString(),
+      results: items.map((u) => ({
+        id: u.id,
+        title: u.title,
+        result: "Succeeded",
+      })),
+      restartRequired: false,
+      message: "Preview only: Defender updates installed.",
+    };
+    sampleStatus.lastOperation = op;
+    sampleHistory.lastOperation = op;
+    sampleHistory.entries.unshift(
+      ...items.map((u) => ({
+        title: u.title,
+        date: op.finishedAt!,
+        result: "Succeeded",
+        code: "0x00000000",
+        action: "Installation",
+        client: "Preview only",
+      })),
+    );
+    return op;
+  },
   setHidden: async (
     items: UpdatePackage[],
     hidden: boolean,
@@ -132,6 +174,15 @@ export const api = {
     return op;
   },
 };
+export async function openControllerRelease() {
+  if (preview)
+    window.open(
+      "https://github.com/kenhaesler/win-update-controller/releases/latest",
+      "_blank",
+      "noopener,noreferrer",
+    );
+  else await invoke("open_controller_release");
+}
 export function officialLink(url: string): boolean {
   try {
     const u = new URL(url);

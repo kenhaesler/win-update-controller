@@ -29,6 +29,8 @@ async fn windows_request(app: tauri::AppHandle, request: Value) -> Result<Value,
         "history",
         "review",
         "notes",
+        "appRelease",
+        "autoDefender",
         "download",
         "install",
         "hide",
@@ -40,7 +42,7 @@ async fn windows_request(app: tauri::AppHandle, request: Value) -> Result<Value,
     {
         return Err("Unsupported operation".into());
     }
-    let mutation = ["download", "install", "hide", "unhide", "enableManual", "restorePolicy"].contains(&command);
+    let mutation = ["download", "install", "autoDefender", "hide", "unhide", "enableManual", "restorePolicy"].contains(&command);
     let state = app.state::<OperationLock>();
     if mutation && state.0.swap(true, Ordering::SeqCst) {
         return Err("Another operation is running".into());
@@ -86,10 +88,15 @@ fn open_official_url(url: String) -> Result<(), String> {
     open::that(url).map_err(|e| e.to_string())
 }
 
+#[tauri::command]
+fn open_controller_release() -> Result<(), String> {
+    open::that("https://github.com/kenhaesler/win-update-controller/releases/latest").map_err(|e| e.to_string())
+}
+
 fn main() {
     tauri::Builder::default()
         .manage(OperationLock(AtomicBool::new(false)))
-        .invoke_handler(tauri::generate_handler![windows_request, open_official_url])
+        .invoke_handler(tauri::generate_handler![windows_request, open_official_url, open_controller_release])
         .setup(|app| {
             use tauri::{
                 menu::{Menu, MenuItem},

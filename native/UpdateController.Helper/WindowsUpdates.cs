@@ -52,7 +52,41 @@ public static class WindowsUpdates
         return new Package((string)update.Identity.UpdateID, (int)update.Identity.RevisionNumber, (string)update.Title, (string)update.Description,
             category, kb.ToArray(), urls.Distinct().ToArray(), ((DateTime)update.LastDeploymentChangeTime).ToUniversalTime().ToString("O"),
             Convert.ToDecimal((object)update.MaxDownloadSize), (bool)update.IsDownloaded, reboot switch { 0 => "Not expected", 1 => "Required", _ => "May be required" },
-            (int)update.InstallationBehavior.Impact == 2, (bool)update.EulaAccepted, bundles.ToArray(), (bool)update.IsHidden);
+            (int)update.InstallationBehavior.Impact == 2, (bool)update.EulaAccepted, bundles.ToArray(), (bool)update.IsHidden, DefenderEligible(update));
+    }
+    static bool DefenderEligible(dynamic update)
+    {
+        try
+        {
+            var kb = new List<string>();
+            for (int i = 0; i < update.KBArticleIDs.Count; i++) kb.Add((string)update.KBArticleIDs.Item(i));
+            bool children = true;
+            for (int i = 0; i < update.BundledUpdates.Count; i++) children &= DefenderEligible(update.BundledUpdates.Item(i));
+            return Protocol.DefenderEligible(kb.ToArray(), (int)update.Type, (int)update.InstallationBehavior.RebootBehavior,
+                (int)update.InstallationBehavior.Impact, (bool)update.IsHidden, (bool)update.EulaAccepted,
+                (bool)update.InstallationBehavior.CanRequestUserInput, children);
+        }
+        catch { return false; } // Unknown metadata must never authorize automatic installation.
+    }
+    static void RequireDefender(dynamic collection)
+    {
+        dynamic info = Com("Microsoft.Update.SystemInfo");
+        if ((bool)info.RebootRequired || KeyExists(@"SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate\Auto Update\RebootRequired") || KeyExists(@"SOFTWARE\Microsoft\Windows\CurrentVersion\Component Based Servicing\RebootPending"))
+            throw new Exception("Defender automation skipped because Windows has a pending restart.");
+        for (int i = 0; i < collection.Count; i++)
+            if (!DefenderEligible(collection.Item(i))) throw new Exception("Defender update eligibility changed. Check for updates again; no automatic installation was started.");
+    }
+    public static object AutoDefender(Request request)
+    {
+        dynamic collection = Resolve(request.Updates!);
+        RequireDefender(collection);
+        Review download = ReviewCollection(collection, "download");
+        var downloaded = (OperationRecord)Run(new Request("download", request.Updates, ReviewToken: download.ReviewToken), true);
+        if (downloaded.State != "completed") return downloaded;
+        collection = Resolve(request.Updates!);
+        RequireDefender(collection);
+        Review install = ReviewCollection(collection, "install");
+        return Run(new Request("install", request.Updates, ReviewToken: install.ReviewToken), true);
     }
     public static object Scan()
     {
@@ -145,9 +179,10 @@ public static class WindowsUpdates
         var json = key?.GetValue("LastOperation") as string;
         return json == null ? null : JsonSerializer.Deserialize<OperationRecord>(json, Protocol.Json);
     }
-    public static object Run(Request request)
+    public static object Run(Request request, bool automatic = false)
     {
         dynamic collection = Resolve(request.Updates!);
+        if (automatic) RequireDefender(collection);
         Review review = ReviewCollection(collection, request.Command);
         if (!string.Equals(review.ReviewToken, request.ReviewToken, StringComparison.Ordinal)) throw new Exception("The update details changed. Review the selection again before proceeding.");
         if (review.Licenses.Length > 0 && !request.AcceptLicenses) throw new Exception("Review and accept the license terms before proceeding.");
@@ -165,7 +200,7 @@ public static class WindowsUpdates
         WriteOperation(record);
         try
         {
-            for (int i = 0; i < collection.Count; i++) AcceptLicenses(collection.Item(i));
+            if (!automatic) for (int i = 0; i < collection.Count; i++) AcceptLicenses(collection.Item(i));
             dynamic result = request.Command == "install" ? task.Install() : task.Download();
             var results = new List<object>();
             for (int i = 0; i < collection.Count; i++)

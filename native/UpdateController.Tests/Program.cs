@@ -4,6 +4,22 @@ int tests = 0;
 void Assert(bool condition, string message) { tests++; if (!condition) throw new Exception(message); }
 void Reject(Request request) { try { Protocol.Validate(request); throw new Exception("Accepted an invalid request"); } catch (ArgumentException) { tests++; } }
 Reject(new Request("shell"));
+Reject(new Request("autoDefender", []));
+Reject(new Request("autoDefender", [new("bad", 1)]));
+Protocol.Validate(new Request("appRelease")); tests++;
+Assert(Protocol.DefenderEligible(["2267602"], 1, 0, 0, false, true, false, true), "Defender intelligence without restart is eligible");
+Assert(Protocol.DefenderEligible(["4052623"], 1, 0, 0, false, true, false, true), "Defender platform without restart is eligible");
+foreach (var kb in new string[][] { [], ["1234567"], ["2267602", "1234567"] })
+    Assert(!Protocol.DefenderEligible(kb, 1, 0, 0, false, true, false, true), "Unknown/non-Defender packages must be excluded");
+foreach (var reboot in new[] { 1, 2, -1, 99 })
+    Assert(!Protocol.DefenderEligible(["2267602"], 1, reboot, 0, false, true, false, true), "Only never-reboots metadata permits automation");
+Assert(!Protocol.DefenderEligible(["2267602"], 2, 0, 0, false, true, false, true), "Drivers excluded");
+Assert(!Protocol.DefenderEligible(["2267602"], 1, 0, 2, false, true, false, true), "Exclusive updates excluded");
+Assert(!Protocol.DefenderEligible(["2267602"], 1, 0, 99, false, true, false, true), "Unknown installation impact excluded");
+Assert(!Protocol.DefenderEligible(["2267602"], 1, 0, 0, true, true, false, true), "Hidden updates excluded");
+Assert(!Protocol.DefenderEligible(["2267602"], 1, 0, 0, false, false, false, true), "Unaccepted terms excluded");
+Assert(!Protocol.DefenderEligible(["2267602"], 1, 0, 0, false, true, true, true), "Interactive updates excluded");
+Assert(!Protocol.DefenderEligible(["2267602"], 1, 0, 0, false, true, false, false), "Unsafe or unknown bundled components excluded");
 Reject(new Request("download", [new("bad' or IsInstalled=0", 1)], ReviewToken:"x"));
 Reject(new Request("install", []));
 var identity = new UpdateRef(Guid.NewGuid().ToString(), 1);

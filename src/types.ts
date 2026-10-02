@@ -11,6 +11,7 @@ export interface UpdatePackage {
   size: number;
   downloaded: boolean;
   hidden?: boolean;
+  autoInstallEligible?: boolean;
   restart: string;
   exclusive: boolean;
   eulaAccepted: boolean;
