@@ -48,7 +48,7 @@ internal static class Program
             if (line.Length > 100_000) throw new ArgumentException("Request too large.");
             var request = JsonSerializer.Deserialize<Request>(line, Protocol.Json) ?? throw new ArgumentException("Invalid request.");
             Protocol.Validate(request);
-            if (request.Command is "download" or "install" or "autoDefender" or "hide" or "unhide" or "enableManual" or "restorePolicy")
+            if (request.Command is "download" or "install" or "autoDefender" or "hide" or "unhide" or "enableManual" or "restorePolicy" or "excludeDriver" or "removeDriverRule")
                 Console.WriteLine(Elevate(request));
             else Console.WriteLine(Execute(request));
             return 0;
@@ -67,6 +67,9 @@ internal static class Program
                 "status" => WindowsUpdates.Status(), "scan" => WindowsUpdates.Scan(), "history" => WindowsUpdates.History(), "reconcile" => WindowsUpdates.Reconcile(request), "notes" => ReleaseNotes.Fetch(request),
                 "review" => WindowsUpdates.Prepare(request), "enableManual" => WindowsUpdates.LogAction(request, Policy.Enable), "restorePolicy" => WindowsUpdates.LogAction(request, Policy.Restore),
                 "hide" or "unhide" => WindowsUpdates.LogAction(request, () => WindowsUpdates.SetHidden(request)),
+                "driverRules" => DriverRules.Read(),
+                "excludeDriver" => WindowsUpdates.LogAction(request, () => WindowsUpdates.ExcludeDriver(request)),
+                "removeDriverRule" => WindowsUpdates.LogAction(request, () => DriverRules.Remove(request.RuleId!)),
                 "appRelease" => AppRelease.Fetch(), "autoDefender" => WindowsUpdates.AutoDefender(request),
                 "download" or "install" => WindowsUpdates.Run(request), _ => throw new ArgumentException("Unknown operation.")
             };

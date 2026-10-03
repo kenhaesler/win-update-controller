@@ -12,11 +12,14 @@ export interface UpdatePackage {
   downloaded: boolean;
   hidden?: boolean;
   autoInstallEligible?: boolean;
+  driver?: { hardwareId: string | null; model: string | null; provider: string | null; manufacturer: string | null; class: string | null; versionDate: string | null } | null;
+  excluded?: boolean;
   restart: string;
   exclusive: boolean;
   eulaAccepted: boolean;
   bundles: string[];
 }
+export interface DriverRule { id: string; hardwareId: string; label: string; createdAt: string; }
 export interface Operation {
   id: string;
   action: string;

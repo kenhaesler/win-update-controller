@@ -43,10 +43,12 @@ import {
 import { demoScan } from "./demo";
 import ReleaseNotes from "./ReleaseNotes";
 import ActivityLog from "./ActivityLog";
+import DriverExclusion from "./DriverExclusion";
 import type {
   Category,
   HistoryResult,
   Operation,
+  DriverRule,
   ScanResult,
   SystemStatus,
   Tab,
@@ -126,6 +128,22 @@ export default function App() {
   const [history, setHistory] = useState<HistoryResult | null>(null);
   const [historyError, setHistoryError] = useState<string | null>(null);
   const [historyQuery, setHistoryQuery] = useState("");
+  const [driverRules, setDriverRules] = useState<DriverRule[]>([]);
+  const [driverRulesError, setDriverRulesError] = useState<string | null>(null);
+  useEffect(() => { void api.driverRules().then(rules => {
+    setDriverRules(rules);
+    setScan(current => current && ({ ...current, updates: current.updates.map(u => u.driver || u.category === "Drivers" ? {
+      ...u, excluded: rules.length > 0 && (!u.driver?.hardwareId || rules.some(r => r.hardwareId.toUpperCase() === u.driver?.hardwareId?.toUpperCase())),
+    } : u) }));
+  }).catch(e => setDriverRulesError(String(e))); }, []);
+  async function changeDriverRule(update?: UpdatePackage, ruleId?: string) {
+    await run("Saving device exclusions…", async () => {
+      setDriverRules(update ? await api.excludeDriver(update) : await api.removeDriverRule(ruleId!));
+      setDriverRulesError(null);
+      saveScan(await api.scan()); setSelected(new Set());
+      setNotice(update ? "Device exclusion saved. Matching drivers cannot be downloaded or installed by the controller." : "Device exclusion removed. Windows-hidden packages remain hidden until you restore them.");
+    });
+  }
   async function checkUnresolved(operation: Operation) {
     await run("Checking unresolved packages…", async () => {
       const next = await api.scan();
@@ -162,7 +180,8 @@ export default function App() {
   const reduceMotion = useReducedMotion();
   const packages = scan?.updates ?? [];
   const hiddenView = filter === "Hidden";
-  const visiblePackages = packages.filter((u) => !!u.hidden === hiddenView);
+  const excludedView = filter === "Excluded";
+  const visiblePackages = packages.filter((u) => hiddenView ? !!u.hidden : excludedView ? !!u.excluded && !u.hidden : !u.hidden && !u.excluded);
   const active = visiblePackages.find((u) => u.id === activeId);
   const selection = visiblePackages.filter((u) => selected.has(u.id));
   const action = selectedAction(selection);
@@ -170,6 +189,7 @@ export default function App() {
     (u) =>
       (filter === "All" ||
         filter === "Hidden" ||
+        filter === "Excluded" ||
         u.category === filter ||
         (filter === "Optional" && u.category === "Drivers")) &&
       `${u.title} ${u.kbIds.join(" ")}`
@@ -359,7 +379,7 @@ export default function App() {
     });
   }
   async function beginReview() {
-    if (hiddenView || selection.some((u) => u.hidden)) return;
+    if (hiddenView || selection.some((u) => u.hidden || u.excluded)) return;
     dialogInvoker.current = document.activeElement as HTMLElement;
     await run("Preparing your selection…", async () => {
       setAccepted(false);
@@ -626,7 +646,7 @@ export default function App() {
                 </p>
               </div>
               <div className="filters" aria-label="Filter updates">
-                {["All", "Security", "Drivers", "Optional", "Hidden"].map(
+                {["All", "Security", "Drivers", "Optional", "Excluded", "Hidden"].map(
                   (f) => (
                     <button
                       key={f}
@@ -667,7 +687,7 @@ export default function App() {
                       checked={selected.has(u.id)}
                       aria-label={`Select ${u.title}`}
                       onChange={() => toggle(u.id)}
-                      disabled={!!busy}
+                      disabled={!!busy || !!u.excluded}
                     />
                     <button
                       ref={(el) => {
@@ -856,6 +876,8 @@ export default function App() {
                       )}
                     </section>
                     <ReleaseNotes key={active.id} update={active} />
+                    {active.excluded && active.category !== "Drivers" && <p className="inline-warning">This package includes an excluded driver. Review device exclusions in Settings.</p>}
+                    {active.category === "Drivers" && <DriverExclusion key={`driver.${active.id}.${active.revision}`} update={active} busy={!!busy} exclude={() => void changeDriverRule(active)} />}
                   </motion.article>
                 ) : (
                   <div className="empty-state reader-empty">
@@ -1207,6 +1229,13 @@ export default function App() {
             </section>
             <section className="settings-detail">
               <h2>Scope & limits</h2>
+              <h3>Device driver exclusions</h3>
+              <p className="muted">Rules block matching controller downloads and installations, including bundled drivers. Unknown driver identities are blocked while any rule is active. Removing a rule does not restore Windows-hidden packages.</p>
+              {driverRulesError && <p className="inline-warning">Could not read driver exclusions: {driverRulesError}</p>}
+              <button className="text-link" disabled={!!busy} onClick={() => void api.driverRules().then(rules => { setDriverRules(rules); setDriverRulesError(null); }).catch(e => setDriverRulesError(String(e)))}>Refresh driver exclusions</button>
+              {!driverRulesError && driverRules.length === 0 && <p className="muted">No device driver exclusions saved.</p>}
+              {driverRules.map(rule => <div key={rule.id} className="driver-rule"><div><strong>{rule.label}</strong><p className="driver-id">{rule.hardwareId}</p></div>
+                <button className="button outline" disabled={!!busy} onClick={() => void changeDriverRule(undefined, rule.id)}>Remove exclusion for {rule.label}</button></div>)}
               <p className="muted">
                 Manual mode cannot undo updates already staged for a restart.
                 Cumulative fixes are selected as a package. Store apps,

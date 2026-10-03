@@ -6,6 +6,7 @@ import type {
   UpdatePackage,
   UpdateReview,
   Operation,
+  DriverRule,
 } from "./types";
 import { demoScan, demoStatus, demoHistory } from "./demo";
 import { version } from "../package.json";
@@ -14,12 +15,29 @@ export const preview = !isTauri();
 let sampleScan: ScanResult = structuredClone(demoScan);
 let sampleStatus: SystemStatus = structuredClone(demoStatus);
 let sampleHistory: HistoryResult = structuredClone(demoHistory);
+let sampleRules: DriverRule[] = [];
+try { const value = JSON.parse(localStorage.getItem("update-controller.preview-driver-rules") ?? "[]"); if (Array.isArray(value)) sampleRules = value.filter(r => typeof r.id === "string" && typeof r.hardwareId === "string"); } catch { /* Preview preferences are optional. */ }
+const previewExcluded = (u: UpdatePackage) => sampleRules.some(r => r.hardwareId.toUpperCase() === u.driver?.hardwareId?.toUpperCase());
 const refs = (items: UpdatePackage[]) =>
   items.map(({ id, revision }) => ({ id, revision }));
 const request = <T>(data: object) =>
   invoke<T>("windows_request", { request: data });
 const delay = () => new Promise<void>((resolve) => setTimeout(resolve, 550));
 export const api = {
+  driverRules: async (): Promise<DriverRule[]> => preview ? structuredClone(sampleRules) : request({ command: "driverRules" }),
+  excludeDriver: async (u: UpdatePackage): Promise<DriverRule[]> => {
+    if (!preview) return request({ command: "excludeDriver", updates: refs([u]), hardwareId: u.driver?.hardwareId });
+    if (!u.driver?.hardwareId) throw Error("Driver hardware identity unavailable.");
+    const next = previewExcluded(u) ? sampleRules : [...sampleRules, { id: crypto.randomUUID(), hardwareId: u.driver.hardwareId, label: u.title, createdAt: new Date().toISOString() }];
+    localStorage.setItem("update-controller.preview-driver-rules", JSON.stringify(next)); sampleRules = next;
+    return structuredClone(next);
+  },
+  removeDriverRule: async (id: string): Promise<DriverRule[]> => {
+    if (!preview) return request({ command: "removeDriverRule", ruleId: id });
+    const next = sampleRules.filter(r => r.id !== id);
+    localStorage.setItem("update-controller.preview-driver-rules", JSON.stringify(next)); sampleRules = next;
+    return structuredClone(next);
+  },
   reconcile: async (id: string): Promise<Operation> => {
     if (!preview) return request({ command: "reconcile", operationId: id });
     const op = sampleHistory.operations?.find(o => o.id === id) ?? sampleHistory.lastOperation;
@@ -104,6 +122,7 @@ export const api = {
     if (!preview) return request({ command: "scan" });
     await delay();
     sampleScan.checkedAt = new Date().toISOString();
+    sampleScan.updates = sampleScan.updates.map(u => ({ ...u, excluded: previewExcluded(u) }));
     return structuredClone(sampleScan);
   },
   history: async (): Promise<HistoryResult> =>
@@ -124,6 +143,7 @@ export const api = {
     if (!preview)
       return request({ command: "review", updates: refs(items), action });
     await delay();
+    if (items.some(previewExcluded)) throw Error("A selected driver matches a device exclusion.");
     return {
       updates: items,
       licenses: [],
@@ -143,6 +163,7 @@ export const api = {
         acceptLicenses,
       });
     await delay();
+    if (review.updates.some(previewExcluded)) throw Error("A selected driver matches a device exclusion.");
     const op: Operation = {
       id: crypto.randomUUID(),
       action: review.action,

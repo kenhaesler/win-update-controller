@@ -52,7 +52,36 @@ public static class WindowsUpdates
         return new Package((string)update.Identity.UpdateID, (int)update.Identity.RevisionNumber, (string)update.Title, (string)update.Description,
             category, kb.ToArray(), urls.Distinct().ToArray(), ((DateTime)update.LastDeploymentChangeTime).ToUniversalTime().ToString("O"),
             Convert.ToDecimal((object)update.MaxDownloadSize), (bool)update.IsDownloaded, reboot switch { 0 => "Not expected", 1 => "Required", _ => "May be required" },
-            (int)update.InstallationBehavior.Impact == 2, (bool)update.EulaAccepted, bundles.ToArray(), (bool)update.IsHidden, DefenderEligible(update));
+            (int)update.InstallationBehavior.Impact == 2, (bool)update.EulaAccepted, bundles.ToArray(), (bool)update.IsHidden, DefenderEligible(update), ReadDriver(update), IsExcluded(update));
+    }
+    static DriverMetadata? ReadDriver(dynamic update)
+    {
+        if ((int)update.Type != 2) return null;
+        string? Read(Func<object> get) { try { return Convert.ToString(get()); } catch { return null; } }
+        return new DriverMetadata(Read(() => update.DriverHardwareID), Read(() => update.DriverModel), Read(() => update.DriverProvider),
+            Read(() => update.DriverManufacturer), Read(() => update.DriverClass), Read(() => update.DriverVerDate));
+    }
+    static bool IsExcluded(dynamic update)
+    {
+        var rules = DriverRules.Read();
+        if (rules.Length == 0) return false;
+        DriverMetadata? driver = ReadDriver(update);
+        if (driver != null && (string.IsNullOrWhiteSpace(driver.HardwareId) || DriverRules.Matches(driver.HardwareId, rules))) return true;
+        for (int i = 0; i < update.BundledUpdates.Count; i++) if (IsExcluded(update.BundledUpdates.Item(i))) return true;
+        return false;
+    }
+    public static object ExcludeDriver(Request request)
+    {
+        var item = request.Updates![0];
+        dynamic searcher = Session().CreateUpdateSearcher(); searcher.Online = false;
+        string identity = $"UpdateID='{item.Id}' and RevisionNumber={item.Revision} and IsInstalled=0";
+        dynamic result = searcher.Search($"{identity} and IsHidden=0 or {identity} and IsHidden=1");
+        if ((int)result.ResultCode != 2 || result.Updates.Count != 1) throw new Exception("The driver is no longer available. Check and review again.");
+        dynamic update = result.Updates.Item(0);
+        DriverMetadata? driver = ReadDriver(update);
+        if (driver == null) throw new Exception("Only a driver update can create a device exclusion.");
+        if (string.IsNullOrWhiteSpace(driver.HardwareId) || DriverRules.Normalize(driver.HardwareId) != DriverRules.Normalize(request.HardwareId!)) throw new Exception("The driver's hardware identity changed. Check and review the exclusion again.");
+        return DriverRules.Add(driver, (string)update.Title);
     }
     static bool DefenderEligible(dynamic update)
     {
@@ -138,6 +167,7 @@ public static class WindowsUpdates
             // Protocol validates GUIDs/revisions before interpolation; only exact approved identities resolve.
             dynamic found = searcher.Search($"UpdateID='{item.Id}' and RevisionNumber={item.Revision} and IsInstalled=0 and IsHidden=0");
             if ((int)found.ResultCode != 2 || found.Updates.Count != 1) throw new Exception("A selected update is no longer available. Check for updates and review your selection again.");
+            if (IsExcluded(found.Updates.Item(0))) throw new Exception("A selected package or bundled driver matches a device exclusion. Remove that exclusion in Settings before reviewing installation.");
             collection.Add(found.Updates.Item(0));
         }
         return collection;

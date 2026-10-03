@@ -1396,3 +1396,9 @@ summary {
 .activity-entry p { margin-top: 10px; white-space: pre-wrap; overflow-wrap: anywhere; }
 .activity-entry .text-link { margin-right: 16px; }
 .operation-result small { display: block; color: var(--muted); margin-top: 6px; }
+.driver-exclusion dl { margin: 12px 0; font-size: 13px; }
+.driver-exclusion dt { color: var(--muted); margin-top: 10px; }
+.driver-exclusion dd { margin: 4px 0 0; overflow-wrap: anywhere; }
+.driver-rule { display: flex; flex-wrap: wrap; gap: 12px; justify-content: space-between; align-items: center; padding: 16px 0; border-top: 1px solid var(--border); }
+.driver-rule > div { min-width: 0; flex: 1; }
+.driver-id { overflow-wrap: anywhere; font-size: 13px; }

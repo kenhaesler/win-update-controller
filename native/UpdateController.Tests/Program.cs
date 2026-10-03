@@ -111,6 +111,15 @@ Assert(journalRecord.Results[0].ObservedState == null, "Read-only observation do
 Assert(OperationJournal.Parse("{bad") == null && OperationJournal.Parse("{}") == null, "Incomplete journal records are ignored safely");
 var legacyJson = Protocol.Serialize(new { id = journalRecord.Id, action = "install", state = "completed", startedAt = journalRecord.StartedAt, results = new[] { new { id = identity.Id, title = "Package", result = "Succeeded" } }, restartRequired = false });
 Assert(OperationJournal.Parse(legacyJson)?.Results[0].Revision == null, "Legacy results retain unknown revision rather than guessing retry identity");
+Reject(new Request("excludeDriver", [], HardwareId: "PCI\\VEN_TEST"));
+Reject(new Request("excludeDriver", [identity], HardwareId: ""));
+Reject(new Request("removeDriverRule", RuleId: "bad\\registry\\path"));
+Protocol.Validate(new Request("excludeDriver", [identity], HardwareId: "PCI\\VEN_TEST")); tests++;
+var driverRule = new DriverRule(Guid.NewGuid().ToString(), "PCI\\VEN_1234&DEV_5678", "Display", "2026-10-04");
+Assert(DriverRules.Matches(" pci\\ven_1234&dev_5678 ", [driverRule]), "Device rules normalize exact IDs across replacement identities and capitalization");
+Assert(!DriverRules.Matches("PCI\\VEN_1234&DEV_5678&SUBSYS_OTHER", [driverRule]), "No prefix/wildcard matching that expands device scope");
+Assert(!DriverRules.Matches(null, [driverRule]), "Unknown hardware identity does not claim a confirmed match");
+Assert(Protocol.Fingerprint([package with { Driver = new DriverMetadata("id", null, null, null, null, null) }], [], "install") != Protocol.Fingerprint([package with { Excluded = true }], [], "install"), "Review fingerprints bind driver metadata and exclusion state");
 Console.WriteLine($"Passed {tests} protocol, pipe security, transaction recovery, and source-extraction assertions. No Windows settings changed.");
 
 class FakeStore : IPolicyStore
