@@ -50,9 +50,13 @@ import ReminderEditor from "./ReminderEditor";
 import { dueReminders, loadReminders, localDay, reminderIdentity, reminderKey, type ReviewReminder } from "./reminders";
 import { loadPolicyAlerts, policyChange } from "./policyChanges";
 import KnownIssueReview from "./KnownIssueReview";
+import ActivityLog from "./ActivityLog";
+import DriverExclusion from "./DriverExclusion";
 import type {
   Category,
   HistoryResult,
+  Operation,
+  DriverRule,
   ScanResult,
   SystemStatus,
   Tab,
@@ -148,6 +152,41 @@ export default function App() {
   const releaseActive = useRef(false);
   const [history, setHistory] = useState<HistoryResult | null>(null);
   const [historyError, setHistoryError] = useState<string | null>(null);
+  const [historyQuery, setHistoryQuery] = useState("");
+  const [driverRules, setDriverRules] = useState<DriverRule[]>([]);
+  const [driverRulesError, setDriverRulesError] = useState<string | null>(null);
+  useEffect(() => { void api.driverRules().then(rules => {
+    setDriverRules(rules);
+    setScan(current => current && ({ ...current, updates: current.updates.map(u => u.driver || u.category === "Drivers" ? {
+      ...u, excluded: rules.length > 0 && (!u.driver?.hardwareId || rules.some(r => r.hardwareId.toUpperCase() === u.driver?.hardwareId?.toUpperCase())),
+    } : u) }));
+  }).catch(e => setDriverRulesError(String(e))); }, []);
+  async function changeDriverRule(update?: UpdatePackage, ruleId?: string) {
+    await run("Saving device exclusions…", async () => {
+      setDriverRules(update ? await api.excludeDriver(update) : await api.removeDriverRule(ruleId!));
+      setDriverRulesError(null);
+      saveScan(await api.scan()); setSelected(new Set());
+      setNotice(update ? "Device exclusion saved. Matching drivers cannot be downloaded or installed by the controller." : "Device exclusion removed. Windows-hidden packages remain hidden until you restore them.");
+    });
+  }
+  async function checkUnresolved(operation: Operation) {
+    await run("Checking unresolved packages…", async () => {
+      const next = await api.scan();
+      saveScan(next);
+      setStatus(await api.status());
+      const unresolved = operation.results.filter(r => r.result !== "Succeeded");
+      const candidates = next.updates.filter(u => !u.hidden && unresolved.some(r => r.id === u.id && r.revision === u.revision) && (operation.action !== "download" || !u.downloaded));
+      setSelected(new Set(candidates.map(u => u.id)));
+      setActiveId(candidates[0]?.id ?? null); setFilter("All"); setQuery(""); setTab("Updates");
+      setNotice(candidates.length ? `${candidates.length} unresolved packages are available. Review the new selection before continuing; nothing was downloaded or installed.` : "No unresolved exact package revisions are available for retry. Inspect Windows history; replacement packages require a separate selection.");
+    });
+  }
+  function exportDiagnostics() {
+    const blob = new Blob([JSON.stringify({ exportedAt: new Date().toISOString(), status, history }, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a"); link.href = url; link.download = "update-controller-diagnostics.json"; link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
   const [review, setReview] = useState<UpdateReview | null>(null);
   const [policyReview, setPolicyReview] = useState<"enable" | "restore" | null>(
     null,
@@ -166,7 +205,8 @@ export default function App() {
   const reduceMotion = useReducedMotion();
   const packages = scan?.updates ?? [];
   const hiddenView = filter === "Hidden";
-  const visiblePackages = packages.filter((u) => !!u.hidden === hiddenView);
+  const excludedView = filter === "Excluded";
+  const visiblePackages = packages.filter((u) => hiddenView ? !!u.hidden : excludedView ? !!u.excluded && !u.hidden : !u.hidden && !u.excluded);
   const active = visiblePackages.find((u) => u.id === activeId);
   const selection = visiblePackages.filter((u) => selected.has(u.id));
   const action = selectedAction(selection);
@@ -175,6 +215,7 @@ export default function App() {
       (filter === "All" ||
         filter === "Hidden" ||
         (filter === "Downloaded" && u.downloaded) ||
+        filter === "Excluded" ||
         u.category === filter ||
         (filter === "Optional" && u.category === "Drivers")) &&
       `${u.title} ${u.kbIds.join(" ")}`
@@ -388,7 +429,7 @@ export default function App() {
     });
   }
   async function beginReview() {
-    if (hiddenView || selection.some((u) => u.hidden)) return;
+    if (hiddenView || selection.some((u) => u.hidden || u.excluded)) return;
     dialogInvoker.current = document.activeElement as HTMLElement;
     await run("Preparing your selection…", async () => {
       setAccepted(false);
@@ -684,7 +725,7 @@ export default function App() {
                 </p>
               </div>
               <div className="filters" aria-label="Filter updates">
-                {["All", "Security", "Drivers", "Optional", "Downloaded", "Hidden"].map(
+                {["All", "Security", "Drivers", "Optional", "Downloaded", "Excluded", "Hidden"].map(
                   (f) => (
                     <button
                       key={f}
@@ -746,7 +787,7 @@ export default function App() {
                       checked={selected.has(u.id)}
                       aria-label={`Select ${u.title}`}
                       onChange={() => toggle(u.id)}
-                      disabled={!!busy}
+                      disabled={!!busy || !!u.excluded}
                     />
                     <button
                       ref={(el) => {
@@ -939,6 +980,8 @@ export default function App() {
                     <ReminderEditor key={reminderIdentity(active) + (reminders.find(r => reminderIdentity(r) === reminderIdentity(active))?.reviewDate ?? "")}
                       update={active} reminder={reminders.find(r => reminderIdentity(r) === reminderIdentity(active))}
                       save={reminder => saveReminder(active, reminder)} />
+                    {active.excluded && active.category !== "Drivers" && <p className="inline-warning">This package includes an excluded driver. Review device exclusions in Settings.</p>}
+                    {active.category === "Drivers" && <DriverExclusion key={`driver.${active.id}.${active.revision}`} update={active} busy={!!busy} exclude={() => void changeDriverRule(active)} />}
                   </motion.article>
                 ) : (
                   <div className="empty-state reader-empty">
@@ -977,7 +1020,10 @@ export default function App() {
                 Refresh
               </button>
             </div>
-            {history?.lastOperation && (
+            {history && <div className="history-tools"><label>Search history<input aria-label="Search history" value={historyQuery} onChange={e => setHistoryQuery(e.target.value)} placeholder="Package, action, outcome or error code" /></label>
+              <button className="button outline" onClick={exportDiagnostics}>Export diagnostics</button></div>}
+            {history?.operations && <ActivityLog operations={history.operations} query={historyQuery} busy={!!busy} retry={operation => void checkUnresolved(operation)} />}
+            {history?.lastOperation && !history.operations?.length && (
               <div className="operation-summary">
                 <h2>Last app operation</h2>
                 <p>
@@ -1039,7 +1085,7 @@ export default function App() {
               </div>
             ) : (
               <div className="history-list">
-                {history.entries.map((entry, i) => (
+                {history.entries.filter(entry => `${entry.title} ${entry.action} ${entry.result} ${entry.code} ${entry.client}`.toLowerCase().includes(historyQuery.toLowerCase())).map((entry, i) => (
                   <div className="history-row" key={`${entry.date}-${i}`}>
                     {entry.result === "Succeeded" ? (
                       <CheckCircle2 className="positive-text" size={20} />
@@ -1301,6 +1347,13 @@ export default function App() {
             </section>
             <section className="settings-detail">
               <h2>Scope & limits</h2>
+              <h3>Device driver exclusions</h3>
+              <p className="muted">Rules block matching controller downloads and installations, including bundled drivers. Unknown driver identities are blocked while any rule is active. Removing a rule does not restore Windows-hidden packages.</p>
+              {driverRulesError && <p className="inline-warning">Could not read driver exclusions: {driverRulesError}</p>}
+              <button className="text-link" disabled={!!busy} onClick={() => void api.driverRules().then(rules => { setDriverRules(rules); setDriverRulesError(null); }).catch(e => setDriverRulesError(String(e)))}>Refresh driver exclusions</button>
+              {!driverRulesError && driverRules.length === 0 && <p className="muted">No device driver exclusions saved.</p>}
+              {driverRules.map(rule => <div key={rule.id} className="driver-rule"><div><strong>{rule.label}</strong><p className="driver-id">{rule.hardwareId}</p></div>
+                <button className="button outline" disabled={!!busy} onClick={() => void changeDriverRule(undefined, rule.id)}>Remove exclusion for {rule.label}</button></div>)}
               <p className="muted">
                 Manual mode cannot undo updates already staged for a restart.
                 Cumulative fixes are selected as a package. Store apps,

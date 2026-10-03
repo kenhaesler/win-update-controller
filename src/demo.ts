@@ -57,6 +57,7 @@ export const demoScan: ScanResult = {
       id: "a0000000-0000-0000-0000-000000000003",
       revision: 1,
       title: "Display driver",
+      driver: { hardwareId: "PCI\\VEN_1234&DEV_5678", model: "Example display adapter", provider: "Example provider", manufacturer: "Example manufacturer", class: "Display", versionDate: "2026-09-04" },
       description:
         "An example display-driver package. Driver descriptions are supplied by the publisher and can be limited. Read the available notes before choosing to replace your current driver.",
       category: "Drivers",
