@@ -48,6 +48,8 @@ import ErrorDetails from "./ErrorDetails";
 import { discovered, identity, scanAge, sortUpdates, type SortOrder } from "./updateList";
 import ReminderEditor from "./ReminderEditor";
 import { dueReminders, loadReminders, localDay, reminderIdentity, reminderKey, type ReviewReminder } from "./reminders";
+import OperationProgress from "./OperationProgress";
+import { validProgress, type ProgressSnapshot } from "./progress";
 import { loadPolicyAlerts, policyChange } from "./policyChanges";
 import KnownIssueReview from "./KnownIssueReview";
 import ActivityLog from "./ActivityLog";
@@ -140,6 +142,7 @@ export default function App() {
   const [newPackages, setNewPackages] = useState<Set<string>>(new Set());
   const [now, setNow] = useState(Date.now);
   const [busy, setBusy] = useState<string | null>(null);
+  const [progress, setProgress] = useState<{ report: ProgressSnapshot; receivedAt: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [errorContext, setErrorContext] = useState("");
   const [notice, setNotice] = useState<string | null>(null);
@@ -357,11 +360,19 @@ export default function App() {
       void unsub.then((fn) => fn());
     };
   }, []);
+  useEffect(() => {
+    if (preview) return;
+    const unsub = import("@tauri-apps/api/event").then(({ listen }) => listen<unknown>("operation-progress", event => {
+      if (operationActive.current && validProgress(event.payload)) setProgress({ report: event.payload, receivedAt: Date.now() });
+    }));
+    return () => { void unsub.then(fn => fn()); };
+  }, []);
   async function run(label: string, work: () => Promise<void>) {
     if (operationActive.current) return;
     operationActive.current = true;
     setBusy(label);
     setErrorContext(label);
+    setProgress(null);
     setError(null);
     setNotice(null);
     try {
@@ -371,6 +382,7 @@ export default function App() {
     } finally {
       operationActive.current = false;
       setBusy(null);
+      setProgress(null);
     }
   }
   function saveScan(next: ScanResult) {
@@ -697,6 +709,7 @@ export default function App() {
         <div className="operation-banner" role="status" aria-live="polite">
           <LoaderCircle size={17} className="spin" />
           <span>{busy}</span>
+          {progress && <OperationProgress report={progress.report} receivedAt={progress.receivedAt} />}
           <span className="muted">
             {busy.startsWith("Installing")
               ? "Windows is working. You can keep using your PC."

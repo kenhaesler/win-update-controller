@@ -120,6 +120,20 @@ Assert(DriverRules.Matches(" pci\\ven_1234&dev_5678 ", [driverRule]), "Device ru
 Assert(!DriverRules.Matches("PCI\\VEN_1234&DEV_5678&SUBSYS_OTHER", [driverRule]), "No prefix/wildcard matching that expands device scope");
 Assert(!DriverRules.Matches(null, [driverRule]), "Unknown hardware identity does not claim a confirmed match");
 Assert(Protocol.Fingerprint([package with { Driver = new DriverMetadata("id", null, null, null, null, null) }], [], "install") != Protocol.Fingerprint([package with { Excluded = true }], [], "install"), "Review fingerprints bind driver metadata and exclusion state");
+var progressTask = new FakeAsyncTask();
+var reports = new List<ProgressSnapshot>();
+var servicingResult = AsyncServicing.Run(progressTask, "download", [package], Guid.NewGuid().ToString(), reports.Add, _ => progressTask.Job.Step++);
+Assert((string)servicingResult == "done" && progressTask.Ended && progressTask.Job.Cleaned, "Async operation collects the final result and cleans up exactly once");
+Assert(reports.Count == 2 && reports[0].Index == 1 && reports[0].Title == "Package" && reports[0].BytesDownloaded == 1024 && reports[0].TotalBytes == 2048, "Progress includes the current exact package and COM byte estimates");
+var lostUiTask = new FakeAsyncTask();
+Assert((string)AsyncServicing.Run(lostUiTask, "install", [package], Guid.NewGuid().ToString(), _ => throw new IOException("UI disconnected"), _ => lostUiTask.Job.Step++) == "done", "Lost progress delivery never interrupts servicing");
+var unknownTask = new FakeAsyncTask { UnknownProgress = true };
+var unknownReports = new List<ProgressSnapshot>();
+AsyncServicing.Run(unknownTask, "download", [package], Guid.NewGuid().ToString(), unknownReports.Add, _ => unknownTask.Job.Step++);
+Assert(unknownReports.All(r => r.Percent == null && r.Title == null), "Missing Windows progress remains indeterminate");
+var dispatch = System.Runtime.InteropServices.Marshal.GetIDispatchForObject(new UpdateCallback());
+Assert(dispatch != IntPtr.Zero, "Callback exposes the COM automation dispatch interface required by asynchronous WUA");
+System.Runtime.InteropServices.Marshal.Release(dispatch);
 Console.WriteLine($"Passed {tests} protocol, pipe security, transaction recovery, and source-extraction assertions. No Windows settings changed.");
 
 class FakeStore : IPolicyStore
@@ -131,4 +145,22 @@ class FakeStore : IPolicyStore
     public PolicySnapshot? ReadSnapshot() => Snapshot;
     public void SaveSnapshot(PolicySnapshot snapshot) => Snapshot = snapshot;
     public void WriteValue(int? value) { Value = value; if (FailAfterWrite) throw new IOException("Simulated process failure"); }
+}
+public class FakeAsyncTask
+{
+    public FakeAsyncJob Job = new();
+    public bool Ended;
+    public bool UnknownProgress { set => Job.UnknownProgress = value; }
+    public FakeAsyncJob BeginDownload(object progress, object completed, object? state) => Job;
+    public FakeAsyncJob BeginInstall(object progress, object completed, object? state) => Job;
+    public string EndDownload(object job) { Ended = true; return "done"; }
+    public string EndInstall(object job) { Ended = true; return "done"; }
+}
+public class FakeAsyncJob
+{
+    public int Step;
+    public bool Cleaned, UnknownProgress;
+    public bool IsCompleted => Step >= 2;
+    public object GetProgress() => UnknownProgress ? throw new Exception("No COM progress") : new { CurrentUpdateIndex = 0, PercentComplete = 25, CurrentUpdatePercentComplete = 50, TotalBytesDownloaded = "1024", TotalBytesToDownload = "2048" };
+    public void CleanUp() => Cleaned = true;
 }

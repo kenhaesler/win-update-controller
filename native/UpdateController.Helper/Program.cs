@@ -13,7 +13,7 @@ internal static class Program
     [DllImport("kernel32.dll", SetLastError = true)] static extern bool GetNamedPipeServerProcessId(SafePipeHandle pipe, out uint pid);
     [DllImport("kernel32.dll", SetLastError = true)] static extern bool GetNamedPipeClientProcessId(SafePipeHandle pipe, out uint pid);
 
-    [STAThread]
+    [MTAThread]
     static int Main(string[] args)
     {
         try
@@ -97,7 +97,13 @@ internal static class Program
         if (reader.ReadLineAsync(connectTimeout.Token).AsTask().GetAwaiter().GetResult() != nonce) throw new Exception("Administrator helper authentication failed.");
         writer.WriteLine(Protocol.Serialize(request));
         // The worker persists its result before replying. A broken UI connection never restarts an operation.
-        return reader.ReadLine() ?? throw new Exception("Connection to the administrator helper ended. Check history before retrying.");
+        while (true)
+        {
+            var line = reader.ReadLine() ?? throw new Exception("Connection to the administrator helper ended. Check history before retrying.");
+            using var frame = JsonDocument.Parse(line);
+            if (frame.RootElement.TryGetProperty("event", out var kind) && kind.GetString() == "progress") { Console.WriteLine(line); continue; }
+            return line;
+        }
     }
 
     static int Worker(string pipeName, string nonce)
@@ -121,7 +127,8 @@ internal static class Program
         bool locked;
         try { locked = mutex.WaitOne(0); } catch (AbandonedMutexException) { locked = true; }
         if (!locked) { writer.WriteLine(Error(new Exception("Another update operation is already running."))); return 1; }
+        ProgressChannel.Sink = progress => { try { writer.WriteLine(Protocol.Serialize(new { @event = "progress", data = progress })); } catch (IOException) { ProgressChannel.Sink = null; } };
         try { var result = Execute(request); writer.WriteLine(result); return 0; }
-        finally { mutex.ReleaseMutex(); }
+        finally { ProgressChannel.Sink = null; mutex.ReleaseMutex(); }
     }
 }
