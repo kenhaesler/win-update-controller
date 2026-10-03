@@ -45,6 +45,7 @@ import ReleaseNotes from "./ReleaseNotes";
 import { loadScanCache, writeStored } from "./storage";
 import { loadAppearance } from "./appearance";
 import ErrorDetails from "./ErrorDetails";
+import { discovered, identity, scanAge, sortUpdates, type SortOrder } from "./updateList";
 import type {
   Category,
   HistoryResult,
@@ -94,6 +95,10 @@ export default function App() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [filter, setFilter] = useState("All");
   const [query, setQuery] = useState("");
+  const [sort, setSort] = useState<SortOrder>("default");
+  const [cachedResults, setCachedResults] = useState(() => !preview && !!loadCache());
+  const [newPackages, setNewPackages] = useState<Set<string>>(new Set());
+  const [now, setNow] = useState(Date.now);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [errorContext, setErrorContext] = useState("");
@@ -129,16 +134,21 @@ export default function App() {
   const active = visiblePackages.find((u) => u.id === activeId);
   const selection = visiblePackages.filter((u) => selected.has(u.id));
   const action = selectedAction(selection);
-  const filtered = visiblePackages.filter(
+  const filtered = sortUpdates(visiblePackages.filter(
     (u) =>
       (filter === "All" ||
         filter === "Hidden" ||
+        (filter === "Downloaded" && u.downloaded) ||
         u.category === filter ||
         (filter === "Optional" && u.category === "Drivers")) &&
       `${u.title} ${u.kbIds.join(" ")}`
         .toLowerCase()
         .includes(query.toLowerCase()),
-  );
+  ), sort);
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 60_000);
+    return () => clearInterval(timer);
+  }, []);
 
   useEffect(() => {
     document.documentElement.dataset.theme = resolvedTheme;
@@ -289,6 +299,9 @@ export default function App() {
   async function check() {
     await run("Checking for updates…", async () => {
       const result = await api.scan();
+      setNewPackages(discovered(result.updates, packages));
+      setCachedResults(false);
+      setNow(Date.now());
       const available = result.updates.filter((u) => !u.hidden);
       saveScan(result);
       setSelected(new Set());
@@ -599,12 +612,12 @@ export default function App() {
                   {preview
                     ? "Sample packages for exploring the interface"
                     : scan
-                      ? `Last checked ${dateLabel(scan.checkedAt)} · ${new Date(scan.checkedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`
+                      ? `${cachedResults ? "Cached results" : "Last checked"} · ${scanAge(scan.checkedAt, now)} · ${dateLabel(scan.checkedAt)}`
                       : "Check to see what’s available for your PC"}
                 </p>
               </div>
               <div className="filters" aria-label="Filter updates">
-                {["All", "Security", "Drivers", "Optional", "Hidden"].map(
+                {["All", "Security", "Drivers", "Optional", "Downloaded", "Hidden"].map(
                   (f) => (
                     <button
                       key={f}
@@ -622,6 +635,15 @@ export default function App() {
                   ),
                 )}
               </div>
+              <label className="sort-control">Sort updates
+                <select aria-label="Sort updates" value={sort} disabled={!!busy}
+                  onChange={e => setSort(e.target.value as SortOrder)}>
+                  <option value="default">Windows order</option>
+                  <option value="newest">Newest first</option>
+                  <option value="size">Smallest download first</option>
+                  <option value="restart">Restart required first</option>
+                </select>
+              </label>
               {packages.length > 5 && (
                 <label className="search">
                   <Search size={16} />
@@ -633,6 +655,18 @@ export default function App() {
                   />
                 </label>
               )}
+              <div className="selection-tools" aria-label="Package selection tools">
+                <button className="text-link" disabled={!!busy || !filtered.length}
+                  onClick={() => setSelected(new Set(filtered.map(u => u.id)))}>
+                  Select visible ({filtered.length})
+                </button>
+                {!hiddenView && <button className="text-link"
+                  disabled={!!busy || !filtered.some(u => u.downloaded)}
+                  onClick={() => setSelected(new Set(filtered.filter(u => u.downloaded).map(u => u.id)))}>
+                  Select downloaded ({filtered.filter(u => u.downloaded).length})
+                </button>}
+                <span className="muted">Replaces selection with matches in this view.</span>
+              </div>
               <div className="package-list">
                 {filtered.map((u) => (
                   <div
@@ -662,7 +696,7 @@ export default function App() {
                     >
                       <PackageIcon category={u.category} />
                       <span className="package-copy">
-                        <span className="package-title">{u.title}</span>
+                        <span className="package-title">{u.title}{newPackages.has(identity(u)) && <span className="new-update" aria-label="New since previous check"> · New</span>}</span>
                         <span className="package-subtitle">
                           {u.kbIds.length
                             ? u.kbIds.map((kb) => `KB${kb}`).join(", ")
@@ -670,7 +704,8 @@ export default function App() {
                               ? "Windows 11 · Cumulative update"
                               : u.category === "Drivers"
                                 ? "Driver update"
-                                : "Stability and performance"}
+                              : "Stability and performance"}
+                          {u.downloaded ? " · Ready to install" : " · Not downloaded"}
                         </span>
                       </span>
                       <span className="package-meta">
@@ -1210,6 +1245,8 @@ export default function App() {
                 ? `${selection.length} update${selection.length === 1 ? "" : "s"} selected`
                 : "No updates selected"}
             </strong>
+            {selection.some(u => !filtered.some(match => match.id === u.id)) &&
+              <p className="muted">{selection.filter(u => !filtered.some(match => match.id === u.id)).length} selected outside the search results</p>}
             {selection.length > 0 && (
               <button
                 className="clear-selection"

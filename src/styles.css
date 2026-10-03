@@ -1392,3 +1392,17 @@ summary {
 .error-details summary { cursor: pointer; }
 .error-details pre { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; margin-top: 8px; }
 .error-banner { align-items: flex-start; }
+.selection-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  padding: 0 24px 12px;
+  font-size: 12px;
+}
+.selection-tools .text-link { margin: 0; }
+.selection-tools > span { flex-basis: 100%; }
+.sort-control { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 0 24px 12px; color: var(--muted); font-size: 13px; }
+.sort-control select { background: var(--base); color: var(--text); border: 1px solid var(--border); border-radius: var(--radius-control, 6px); padding: 6px; max-width: 100%; }
+.new-update { color: var(--positive); font-size: 12px; }
+
