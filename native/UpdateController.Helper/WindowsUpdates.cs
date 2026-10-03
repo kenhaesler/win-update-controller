@@ -201,7 +201,7 @@ public static class WindowsUpdates
         try
         {
             if (!automatic) for (int i = 0; i < collection.Count; i++) AcceptLicenses(collection.Item(i));
-            dynamic result = request.Command == "install" ? task.Install() : task.Download();
+            dynamic result = AsyncServicing.Run((object)task, request.Command, review.Updates, record.Id, ProgressChannel.Publish);
             var results = new List<object>();
             for (int i = 0; i < collection.Count; i++)
             {

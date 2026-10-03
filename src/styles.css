@@ -1386,3 +1386,8 @@ summary {
     border: 1px solid ButtonText;
   }
 }
+.operation-banner:has(.operation-progress) { flex-wrap: wrap; }
+.operation-progress { flex-basis: 100%; margin-left: 25px; min-width: 0; }
+.operation-progress > div:first-child { overflow-wrap: anywhere; }
+.operation-progress progress { display: block; width: min(100%, 600px); height: 12px; accent-color: var(--accent); margin: 8px 0; }
+.operation-progress .muted { font-size: 12px; }
