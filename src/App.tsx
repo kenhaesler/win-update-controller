@@ -42,13 +42,13 @@ import {
 } from "./preferences";
 import { demoScan } from "./demo";
 import ReleaseNotes from "./ReleaseNotes";
+import { loadScanCache, loadTheme, writeStored } from "./storage";
 import type {
   Category,
   HistoryResult,
   ScanResult,
   SystemStatus,
   Tab,
-  UpdatePackage,
   UpdateReview,
 } from "./types";
 
@@ -79,26 +79,7 @@ function PackageIcon({ category }: { category: Category }) {
 }
 function loadCache(): ScanResult | null {
   if (preview) return demoScan;
-  try {
-    const raw = localStorage.getItem("update-controller.scan.v1");
-    if (!raw) return null;
-    const data = JSON.parse(raw);
-    if (
-      !Array.isArray(data.updates) ||
-      typeof data.checkedAt !== "string" ||
-      !data.updates.every(
-        (u: UpdatePackage) =>
-          typeof u.id === "string" &&
-          typeof u.title === "string" &&
-          Array.isArray(u.supportUrls) &&
-          Array.isArray(u.bundles),
-      )
-    )
-      return null;
-    return data;
-  } catch {
-    return null;
-  }
+  return loadScanCache();
 }
 
 export default function App() {
@@ -129,9 +110,7 @@ export default function App() {
   );
   const [accepted, setAccepted] = useState(false);
   const [showDetail, setShowDetail] = useState(false);
-  const [theme, setTheme] = useState(
-    () => localStorage.getItem("update-controller.theme") || "dark",
-  );
+  const [theme, setTheme] = useState(loadTheme);
   const dialog = useRef<HTMLDialogElement>(null);
   const actionRef = useRef<HTMLButtonElement>(null);
   const dialogInvoker = useRef<HTMLElement | null>(null);
@@ -158,7 +137,7 @@ export default function App() {
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
-    localStorage.setItem("update-controller.theme", theme);
+    writeStored("update-controller.theme", theme);
   }, [theme]);
   useEffect(() => {
     if (started.current) return;
