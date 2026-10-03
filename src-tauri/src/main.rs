@@ -93,10 +93,18 @@ fn open_controller_release() -> Result<(), String> {
     open::that("https://github.com/kenhaesler/win-update-controller/releases/latest").map_err(|e| e.to_string())
 }
 
+#[tauri::command]
+fn notify_policy_change(app: tauri::AppHandle, message: String) -> Result<(), String> {
+    use tauri_plugin_notification::NotificationExt;
+    if message.is_empty() || message.chars().count() > 400 { return Err("Invalid policy notification".into()); }
+    app.notification().builder().title("Update control changed").body(message).show().map_err(|e| e.to_string())
+}
+
 fn main() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_notification::init())
         .manage(OperationLock(AtomicBool::new(false)))
-        .invoke_handler(tauri::generate_handler![windows_request, open_official_url, open_controller_release])
+        .invoke_handler(tauri::generate_handler![windows_request, open_official_url, open_controller_release, notify_policy_change])
         .setup(|app| {
             use tauri::{
                 menu::{Menu, MenuItem},

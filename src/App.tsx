@@ -42,6 +42,7 @@ import {
 } from "./preferences";
 import { demoScan } from "./demo";
 import ReleaseNotes from "./ReleaseNotes";
+import { loadPolicyAlerts, policyChange } from "./policyChanges";
 import type {
   Category,
   HistoryResult,
@@ -104,6 +105,11 @@ function loadCache(): ScanResult | null {
 export default function App() {
   const [tab, setTab] = useState<Tab>("Updates");
   const [status, setStatus] = useState<SystemStatus | null>(null);
+  const previousStatus = useRef<SystemStatus | null>(null);
+  const policyMutation = useRef(false);
+  const [policyAlerts, setPolicyAlerts] = useState(loadPolicyAlerts);
+  const policyAlertsRef = useRef(policyAlerts);
+  policyAlertsRef.current = policyAlerts;
   const [scan, setScan] = useState<ScanResult | null>(loadCache);
   const [activeId, setActiveId] = useState<string | null>(
     () => loadCache()?.updates[0]?.id ?? null,
@@ -204,7 +210,17 @@ export default function App() {
       api
         .status()
         .then((s) => {
-          if (alive) setStatus(s);
+          if (alive) {
+            const message = previousStatus.current && !policyMutation.current ? policyChange(previousStatus.current, s) : null;
+            previousStatus.current = s;
+            setStatus(s);
+            if (message) {
+              setNotice(message);
+              if (policyAlertsRef.current) void api.notifyPolicyChange(message).catch(() => {
+                if (alive) setNotice(message + " Windows notification delivery was unavailable; this alert remains in the controller.");
+              });
+            }
+          }
         })
         .catch((e) => {
           if (alive) {
@@ -432,7 +448,12 @@ export default function App() {
     await run(
       enable ? "Configuring manual mode…" : "Restoring previous policy…",
       async () => {
-        setStatus(await api.policy(enable));
+        policyMutation.current = true;
+        try {
+          const updated = await api.policy(enable);
+          previousStatus.current = updated;
+          setStatus(updated);
+        } finally { policyMutation.current = false; }
         setNotice(
           enable
             ? "Manual-mode policy saved. Check the status details for verification and any existing pending restart."
@@ -1119,6 +1140,16 @@ export default function App() {
                   Light
                 </button>
               </div>
+            </div>
+            <div className="setting-row">
+              <div><h2>Notify when update control changes</h2>
+                <p id="policy-alert-help">Show Windows notifications when manual mode, management conflicts or the Update Agent change outside the controller. Checks run once a minute while the app is open. Changes also appear inside the app.</p></div>
+              <input type="checkbox" className="package-checkbox" aria-label="Notify when update control changes"
+                aria-describedby="policy-alert-help" checked={policyAlerts}
+                onChange={e => {
+                  try { localStorage.setItem("update-controller.policy-alerts", String(e.target.checked)); setPolicyAlerts(e.target.checked); }
+                  catch { setError("Could not save notification preference. The setting was not changed."); }
+                }} />
             </div>
             <section className="settings-detail">
               <h2>What the app can confirm</h2>

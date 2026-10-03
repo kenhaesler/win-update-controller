@@ -20,6 +20,9 @@ const request = <T>(data: object) =>
   invoke<T>("windows_request", { request: data });
 const delay = () => new Promise<void>((resolve) => setTimeout(resolve, 550));
 export const api = {
+  notifyPolicyChange: async (message: string): Promise<void> => {
+    if (!preview) await invoke("notify_policy_change", { message });
+  },
   appRelease: async (): Promise<{ version: string }> =>
     preview ? { version } : request({ command: "appRelease" }),
   autoDefender: async (items: UpdatePackage[]): Promise<Operation> => {
