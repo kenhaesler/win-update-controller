@@ -94,11 +94,27 @@ fn open_controller_release() -> Result<(), String> {
     open::that("https://github.com/kenhaesler/win-update-controller/releases/latest").map_err(|e| e.to_string())
 }
 
+#[tauri::command]
+fn notify_policy_change(app: tauri::AppHandle, message: String) -> Result<(), String> {
+    use tauri_plugin_notification::NotificationExt;
+    if message.is_empty() || message.chars().count() > 400 { return Err("Invalid policy notification".into()); }
+    app.notification().builder().title("Update control changed").body(message).show().map_err(|e| e.to_string())
+}
+#[tauri::command]
+fn notify_review_due(app: tauri::AppHandle, count: u32) -> Result<(), String> {
+    use tauri_plugin_notification::NotificationExt;
+    if count == 0 || count > 1000 { return Err("Invalid reminder count".into()); }
+    app.notification().builder().title("Updates ready for your review")
+        .body(format!("{count} update reminder(s) are due. Open Update Controller to review them; no installation was started."))
+        .show().map_err(|e| e.to_string())
+}
+
 fn main() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_notification::init())
         .manage(OperationLock(AtomicBool::new(false)))
         .manage(window_state::WindowState::default())
-        .invoke_handler(tauri::generate_handler![windows_request, open_official_url, open_controller_release])
+        .invoke_handler(tauri::generate_handler![windows_request, open_official_url, open_controller_release, notify_policy_change, notify_review_due])
         .setup(|app| {
             if let Some(window) = app.get_webview_window("main") {
                 window_state::restore(&window);

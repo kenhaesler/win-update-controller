@@ -46,6 +46,9 @@ import { loadScanCache, writeStored } from "./storage";
 import { loadAppearance } from "./appearance";
 import ErrorDetails from "./ErrorDetails";
 import { discovered, identity, scanAge, sortUpdates, type SortOrder } from "./updateList";
+import ReminderEditor from "./ReminderEditor";
+import { dueReminders, loadReminders, localDay, reminderIdentity, reminderKey, type ReviewReminder } from "./reminders";
+import { loadPolicyAlerts, policyChange } from "./policyChanges";
 import type {
   Category,
   HistoryResult,
@@ -88,7 +91,39 @@ function loadCache(): ScanResult | null {
 export default function App() {
   const [tab, setTab] = useState<Tab>("Updates");
   const [status, setStatus] = useState<SystemStatus | null>(null);
+  const previousStatus = useRef<SystemStatus | null>(null);
+  const policyMutation = useRef(false);
+  const [policyAlerts, setPolicyAlerts] = useState(loadPolicyAlerts);
+  const policyAlertsRef = useRef(policyAlerts);
+  policyAlertsRef.current = policyAlerts;
   const [scan, setScan] = useState<ScanResult | null>(loadCache);
+  const [reminders, setReminders] = useState(loadReminders);
+  const [reminderDay, setReminderDay] = useState(localDay);
+  const deliveredReminders = useRef(new Set<string>());
+  const due = dueReminders(reminders, reminderDay);
+  function saveReminder(update: { id: string; revision: number }, reminder: ReviewReminder | null) {
+    const next = reminders.filter(r => reminderIdentity(r) !== reminderIdentity(update));
+    if (reminder) next.push(reminder);
+    try {
+      localStorage.setItem(reminderKey, JSON.stringify(next));
+      deliveredReminders.current.delete(reminderIdentity(update) + "." + (reminder?.reviewDate ?? ""));
+      setReminders(next);
+      setNotice(reminder ? "Review reminder saved. No update action was started." : "Review reminder removed.");
+    } catch { setError("Could not save the reminder. Check available storage and try again."); }
+  }
+  useEffect(() => {
+    const timer = setInterval(() => setReminderDay(localDay()), 60_000);
+    return () => clearInterval(timer);
+  }, []);
+  useEffect(() => {
+    const notify = due.filter(r => !r.notified && !deliveredReminders.current.has(reminderIdentity(r) + "." + r.reviewDate));
+    if (!notify.length) return;
+    notify.forEach(r => deliveredReminders.current.add(reminderIdentity(r) + "." + r.reviewDate));
+    const keys = new Set(notify.map(reminderIdentity));
+    const next = reminders.map(r => keys.has(reminderIdentity(r)) ? { ...r, notified: true } : r);
+    try { localStorage.setItem(reminderKey, JSON.stringify(next)); setReminders(next); } catch { /* Due reminders remain visible even without storage. */ }
+    void api.notifyReviewDue(notify.length).catch(() => { /* The persistent in-app due list remains available. */ });
+  }, [reminders, reminderDay]);
   const [activeId, setActiveId] = useState<string | null>(
     () => loadCache()?.updates[0]?.id ?? null,
   );
@@ -204,7 +239,17 @@ export default function App() {
       api
         .status()
         .then((s) => {
-          if (alive) setStatus(s);
+          if (alive) {
+            const message = previousStatus.current && !policyMutation.current ? policyChange(previousStatus.current, s) : null;
+            previousStatus.current = s;
+            setStatus(s);
+            if (message) {
+              setNotice(message);
+              if (policyAlertsRef.current) void api.notifyPolicyChange(message).catch(() => {
+                if (alive) setNotice(message + " Windows notification delivery was unavailable; this alert remains in the controller.");
+              });
+            }
+          }
         })
         .catch((e) => {
           if (alive) {
@@ -410,6 +455,12 @@ export default function App() {
             .filter((x) => x.result === "Succeeded")
             .map((x) => x.id),
         );
+        if (approved.action === "install") {
+          const remaining = reminders.filter(r => !succeeded.has(r.id) || !approved.updates.some(u => reminderIdentity(u) === reminderIdentity(r)));
+          setReminders(remaining);
+          try { localStorage.setItem(reminderKey, JSON.stringify(remaining)); }
+          catch { setError("The operation finished, but completed-package reminders could not be cleared from storage."); }
+        }
         if (scan)
           saveScan({
             ...scan,
@@ -436,7 +487,12 @@ export default function App() {
     await run(
       enable ? "Configuring manual mode…" : "Restoring previous policy…",
       async () => {
-        setStatus(await api.policy(enable));
+        policyMutation.current = true;
+        try {
+          const updated = await api.policy(enable);
+          previousStatus.current = updated;
+          setStatus(updated);
+        } finally { policyMutation.current = false; }
         setNotice(
           enable
             ? "Manual-mode policy saved. Check the status details for verification and any existing pending restart."
@@ -585,6 +641,16 @@ export default function App() {
           </button>
         </div>
       )}
+      {due.length > 0 && <div className="banner reminder-banner">
+        <Clock3 size={18} /><details><summary>{due.length} update reminder{due.length === 1 ? "" : "s"} due for review</summary>
+          <ul>{due.map(r => <li key={reminderIdentity(r)}>
+            <strong>{r.title}</strong> · {r.reviewDate}{r.reason && <p>{r.reason}</p>}
+            {packages.some(u => reminderIdentity(u) === reminderIdentity(r)) ?
+              <button className="text-link" onClick={() => { setTab("Updates"); setFilter(packages.find(u => u.id === r.id)?.hidden ? "Hidden" : "All"); setActiveId(r.id); setShowDetail(true); }}>Review package</button> :
+              <p className="muted">Check for updates to see whether this package is still available.</p>}
+            <button className="text-link" onClick={() => saveReminder(r, null)}>Dismiss reminder for {r.title}</button>
+          </li>)}</ul></details>
+      </div>}
       {busy && (
         <div className="operation-banner" role="status" aria-live="polite">
           <LoaderCircle size={17} className="spin" />
@@ -869,6 +935,9 @@ export default function App() {
                       )}
                     </section>
                     <ReleaseNotes key={active.id} update={active} />
+                    <ReminderEditor key={reminderIdentity(active) + (reminders.find(r => reminderIdentity(r) === reminderIdentity(active))?.reviewDate ?? "")}
+                      update={active} reminder={reminders.find(r => reminderIdentity(r) === reminderIdentity(active))}
+                      save={reminder => saveReminder(active, reminder)} />
                   </motion.article>
                 ) : (
                   <div className="empty-state reader-empty">
@@ -1157,6 +1226,16 @@ export default function App() {
                   Light
                 </button>
               </div>
+            </div>
+            <div className="setting-row">
+              <div><h2>Notify when update control changes</h2>
+                <p id="policy-alert-help">Show Windows notifications when manual mode, management conflicts or the Update Agent change outside the controller. Checks run once a minute while the app is open. Changes also appear inside the app.</p></div>
+              <input type="checkbox" className="package-checkbox" aria-label="Notify when update control changes"
+                aria-describedby="policy-alert-help" checked={policyAlerts}
+                onChange={e => {
+                  try { localStorage.setItem("update-controller.policy-alerts", String(e.target.checked)); setPolicyAlerts(e.target.checked); }
+                  catch { setError("Could not save notification preference. The setting was not changed."); }
+                }} />
             </div>
             <section className="settings-detail">
               <h2>What the app can confirm</h2>
