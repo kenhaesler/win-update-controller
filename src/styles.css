@@ -1386,3 +1386,12 @@ summary {
     border: 1px solid ButtonText;
   }
 }
+.reminder-editor label { display: flex; flex-direction: column; gap: 6px; margin-top: 12px; font-size: 13px; }
+.reminder-editor input { background: var(--base); border: 1px solid var(--border); color: var(--text); padding: 8px; border-radius: 5px; min-width: 0; }
+.reminder-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-top: 12px; }
+.reminder-banner { align-items: flex-start; }
+.reminder-banner details { flex: 1; }
+.reminder-banner summary { cursor: pointer; }
+.reminder-banner ul { padding-left: 20px; max-height: 180px; overflow: auto; }
+.reminder-banner li { padding: 8px 0; }
+.reminder-banner .text-link { margin-right: 16px; }

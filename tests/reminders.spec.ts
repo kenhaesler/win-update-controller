@@ -1,0 +1,27 @@
+import { test, expect } from "@playwright/test";
+import { localDay } from "../src/reminders";
+test("review reminders persist with reasons and never select or install a package", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Read about Display driver" }).click();
+  await expect(page.getByRole("heading", { name: "Display driver", exact: true })).toBeVisible();
+  await page.getByRole("textbox", { name: "Reminder reason", exact: true }).fill("Wait for device compatibility reports");
+  await page.getByLabel("Review date", { exact: true }).fill("2099-01-01");
+  await page.getByRole("button", { name: "Save reminder", exact: true }).click();
+  await expect(page.getByText(/due for review/)).toHaveCount(0);
+  await page.reload();
+  await page.getByRole("button", { name: "Read about Display driver" }).click();
+  await expect(page.getByRole("heading", { name: "Display driver", exact: true })).toBeVisible();
+  await expect(page.getByRole("textbox", { name: "Reminder reason", exact: true })).toHaveValue("Wait for device compatibility reports");
+  await page.getByLabel("Review date", { exact: true }).fill(localDay());
+  await page.getByRole("button", { name: "Update reminder", exact: true }).click();
+  await page.getByText("1 update reminder due for review", { exact: true }).click();
+  await expect(page.getByText("Wait for device compatibility reports", { exact: true })).toBeVisible();
+  await expect(page.getByRole("checkbox", { name: "Select Display driver" })).not.toBeChecked();
+  await expect(page.getByRole("button", { name: "Download selected", exact: true })).toBeDisabled();
+  await page.reload();
+  await expect(page.getByText("1 update reminder due for review", { exact: true })).toBeVisible();
+  await page.getByText("1 update reminder due for review", { exact: true }).click();
+  await page.getByRole("button", { name: "Dismiss reminder for Display driver", exact: true }).click();
+  await page.reload();
+  await expect(page.getByText(/due for review/)).toHaveCount(0);
+});

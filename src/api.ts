@@ -20,6 +20,9 @@ const request = <T>(data: object) =>
   invoke<T>("windows_request", { request: data });
 const delay = () => new Promise<void>((resolve) => setTimeout(resolve, 550));
 export const api = {
+  notifyReviewDue: async (count: number): Promise<void> => {
+    if (!preview) await invoke("notify_review_due", { count });
+  },
   notifyPolicyChange: async (message: string): Promise<void> => {
     if (!preview) await invoke("notify_policy_change", { message });
   },
