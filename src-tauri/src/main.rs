@@ -8,6 +8,7 @@ use std::{
     sync::atomic::{AtomicBool, Ordering},
 };
 use tauri::{Emitter, Manager};
+mod window_state;
 
 struct OperationLock(AtomicBool);
 struct Reset<'a>(&'a AtomicBool);
@@ -96,8 +97,13 @@ fn open_controller_release() -> Result<(), String> {
 fn main() {
     tauri::Builder::default()
         .manage(OperationLock(AtomicBool::new(false)))
+        .manage(window_state::WindowState::default())
         .invoke_handler(tauri::generate_handler![windows_request, open_official_url, open_controller_release])
         .setup(|app| {
+            if let Some(window) = app.get_webview_window("main") {
+                window_state::restore(&window);
+                window_state::capture(&window);
+            }
             use tauri::{
                 menu::{Menu, MenuItem},
                 tray::TrayIconBuilder,
@@ -125,6 +131,7 @@ fn main() {
                                 let _ = w.set_focus();
                             }
                         } else {
+                            if let Some(window) = app.get_webview_window("main") { window_state::save(&window); }
                             app.exit(0);
                         }
                     }
@@ -133,7 +140,11 @@ fn main() {
             Ok(())
         })
         .on_window_event(|window, event| {
+            if matches!(event, tauri::WindowEvent::Moved(_) | tauri::WindowEvent::Resized(_)) {
+                if let Some(webview) = window.app_handle().get_webview_window(window.label()) { window_state::capture(&webview); }
+            }
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                if let Some(webview) = window.app_handle().get_webview_window(window.label()) { window_state::save(&webview); }
                 if window
                     .app_handle()
                     .state::<OperationLock>()

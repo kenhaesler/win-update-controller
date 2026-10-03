@@ -42,7 +42,8 @@ import {
 } from "./preferences";
 import { demoScan } from "./demo";
 import ReleaseNotes from "./ReleaseNotes";
-import { loadScanCache, loadTheme, writeStored } from "./storage";
+import { loadScanCache, writeStored } from "./storage";
+import { loadAppearance } from "./appearance";
 import type {
   Category,
   HistoryResult,
@@ -110,7 +111,9 @@ export default function App() {
   );
   const [accepted, setAccepted] = useState(false);
   const [showDetail, setShowDetail] = useState(false);
-  const [theme, setTheme] = useState(loadTheme);
+  const [theme, setTheme] = useState(loadAppearance);
+  const [systemDark, setSystemDark] = useState(() => window.matchMedia("(prefers-color-scheme: dark)").matches);
+  const resolvedTheme = theme === "system" ? systemDark ? "dark" : "light" : theme;
   const dialog = useRef<HTMLDialogElement>(null);
   const actionRef = useRef<HTMLButtonElement>(null);
   const dialogInvoker = useRef<HTMLElement | null>(null);
@@ -136,9 +139,15 @@ export default function App() {
   );
 
   useEffect(() => {
-    document.documentElement.dataset.theme = theme;
+    document.documentElement.dataset.theme = resolvedTheme;
     writeStored("update-controller.theme", theme);
-  }, [theme]);
+  }, [theme, resolvedTheme]);
+  useEffect(() => {
+    const media = window.matchMedia("(prefers-color-scheme: dark)");
+    const changed = () => setSystemDark(media.matches);
+    media.addEventListener("change", changed);
+    return () => media.removeEventListener("change", changed);
+  }, []);
   useEffect(() => {
     if (started.current) return;
     started.current = true;
@@ -495,10 +504,10 @@ export default function App() {
         })}
         <button
           className="theme-button icon-button"
-          aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} theme`}
-          onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+          aria-label={`Switch to ${resolvedTheme === "dark" ? "light" : "dark"} theme`}
+          onClick={() => setTheme(resolvedTheme === "dark" ? "light" : "dark")}
         >
-          {theme === "dark" ? <Sun size={18} /> : <Moon size={18} />}
+          {resolvedTheme === "dark" ? <Sun size={18} /> : <Moon size={18} />}
         </button>
       </nav>
       {status?.restartPending && (
@@ -1081,6 +1090,10 @@ export default function App() {
                 <p>A comfortable reading surface, day or night.</p>
               </div>
               <div className="theme-options">
+                <button className={`filter ${theme === "system" ? "selected" : ""}`}
+                  aria-pressed={theme === "system"} onClick={() => setTheme("system")}>
+                  <Monitor size={15} /> System
+                </button>
                 <button
                   className={`filter ${theme === "dark" ? "selected" : ""}`}
                   aria-pressed={theme === "dark"}
