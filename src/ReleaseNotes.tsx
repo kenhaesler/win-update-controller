@@ -1,16 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { ArrowUpRight, FileText, LoaderCircle } from "lucide-react";
-import { invoke } from "@tauri-apps/api/core";
 import { dateLabel, officialLink, openOfficial, preview } from "./api";
 import type { UpdatePackage } from "./types";
-
-interface Notes {
-  source: string;
-  retrievedAt: string;
-  title: string;
-  sections: { heading: string; text: string }[];
-  unavailableReason: string | null;
-}
+import { fetchNotes as loadOfficialNotes, readNotes, type Notes } from "./notes";
 export default function ReleaseNotes({ update }: { update: UpdatePackage }) {
   return <PackageNotes key={`${update.id}.${update.revision}`} update={update} />;
 }
@@ -25,16 +17,7 @@ function PackageNotes({ update }: { update: UpdatePackage }) {
   useEffect(() => {
     setNotes(null);
     setError(null);
-    try {
-      const saved = localStorage.getItem(cacheKey);
-      if (saved) {
-        const value = JSON.parse(saved);
-        if (Array.isArray(value.sections) && officialLink(value.source))
-          setNotes(value);
-      }
-    } catch {
-      /* Cached sources are optional. */
-    }
+    setNotes(readNotes(update));
   }, [cacheKey]);
   async function fetchNotes() {
     if (!links[0] || preview) return;
@@ -42,13 +25,9 @@ function PackageNotes({ update }: { update: UpdatePackage }) {
     setLoading(true);
     setError(null);
     try {
-      const next = await invoke<Notes>("windows_request", {
-        request: { command: "notes", url: links[0], kbIds: update.kbIds },
-      });
+      const next = await loadOfficialNotes(update);
       if (requestId !== currentRequest.current) return;
       setNotes(next);
-      try { localStorage.setItem(cacheKey, JSON.stringify(next)); }
-      catch { /* A cache failure must not hide freshly fetched notes. */ }
     } catch (e) {
       if (requestId === currentRequest.current) setError(String(e));
     } finally {

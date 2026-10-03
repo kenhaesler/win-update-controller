@@ -42,6 +42,7 @@ import {
 } from "./preferences";
 import { demoScan } from "./demo";
 import ReleaseNotes from "./ReleaseNotes";
+import KnownIssueReview from "./KnownIssueReview";
 import type {
   Category,
   HistoryResult,
@@ -1355,6 +1356,7 @@ export default function App() {
                   </li>
                 ))}
               </ul>
+              {review.action === "install" && <KnownIssueReview updates={review.updates} version={status?.version} />}
               {review.licenses.map((license, i) => (
                 <details className="license" key={i}>
                   <summary>License terms: {license.title}</summary>
