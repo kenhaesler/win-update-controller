@@ -23,7 +23,7 @@ export interface Operation {
   state: string;
   startedAt: string;
   finishedAt: string | null;
-  results: { id: string; title: string; result: string; code?: string }[];
+  results: { id: string; title: string; result: string; code?: string | null; revision?: number | null; observedState?: string | null }[];
   restartRequired: boolean;
   message: string | null;
 }
@@ -62,5 +62,6 @@ export interface HistoryEntry {
 export interface HistoryResult {
   entries: HistoryEntry[];
   lastOperation: Operation | null;
+  operations?: Operation[];
 }
 export type Tab = "Updates" | "History" | "Settings";

@@ -99,6 +99,18 @@ using (var account = System.Security.Principal.WindowsIdentity.GetCurrent())
     Assert(server.ReadByte() == 42, "Authenticated pipe transfers messages");
     write.GetAwaiter().GetResult();
 }
+Reject(new Request("reconcile", OperationId: "bad' or IsInstalled=1"));
+Protocol.Validate(new Request("reconcile", OperationId: Guid.NewGuid().ToString())); tests++;
+var journalRecord = new OperationRecord(Guid.NewGuid().ToString(), "install", "uncertain", "2026-10-04T12:00:00Z", null,
+    [new OperationResult(identity.Id, "Package", "Pending", Revision: 1)], true, "Interrupted");
+var persisted = OperationJournal.Parse(Protocol.Serialize(journalRecord));
+Assert(persisted?.Results[0].Revision == 1 && persisted.State == "uncertain", "Journal roundtrip preserves exact identity and uncertainty");
+var observation = OperationJournal.Observe(journalRecord, r => r.Id == identity.Id && r.Revision == 1 ? "Currently installed" : "Unknown");
+Assert(observation.State == "uncertain" && observation.Results[0].Result == "Pending" && observation.Results[0].ObservedState == "Currently installed", "Current installation evidence never rewrites an uncertain historical outcome");
+Assert(journalRecord.Results[0].ObservedState == null, "Read-only observation does not mutate a stored record");
+Assert(OperationJournal.Parse("{bad") == null && OperationJournal.Parse("{}") == null, "Incomplete journal records are ignored safely");
+var legacyJson = Protocol.Serialize(new { id = journalRecord.Id, action = "install", state = "completed", startedAt = journalRecord.StartedAt, results = new[] { new { id = identity.Id, title = "Package", result = "Succeeded" } }, restartRequired = false });
+Assert(OperationJournal.Parse(legacyJson)?.Results[0].Revision == null, "Legacy results retain unknown revision rather than guessing retry identity");
 Console.WriteLine($"Passed {tests} protocol, pipe security, transaction recovery, and source-extraction assertions. No Windows settings changed.");
 
 class FakeStore : IPolicyStore

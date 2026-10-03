@@ -20,6 +20,12 @@ const request = <T>(data: object) =>
   invoke<T>("windows_request", { request: data });
 const delay = () => new Promise<void>((resolve) => setTimeout(resolve, 550));
 export const api = {
+  reconcile: async (id: string): Promise<Operation> => {
+    if (!preview) return request({ command: "reconcile", operationId: id });
+    const op = sampleHistory.operations?.find(o => o.id === id) ?? sampleHistory.lastOperation;
+    if (!op) throw Error("This operation is no longer available.");
+    return { ...op, results: op.results.map(r => ({ ...r, observedState: sampleScan.updates.some(u => u.id === r.id) ? "Currently available" : "Not in current metadata; inspect Windows history" })) };
+  },
   appRelease: async (): Promise<{ version: string }> =>
     preview ? { version } : request({ command: "appRelease" }),
   autoDefender: async (items: UpdatePackage[]): Promise<Operation> => {
@@ -49,6 +55,7 @@ export const api = {
     };
     sampleStatus.lastOperation = op;
     sampleHistory.lastOperation = op;
+    sampleHistory.operations = [op, ...(sampleHistory.operations ?? [])];
     sampleHistory.entries.unshift(
       ...items.map((u) => ({
         title: u.title,
@@ -144,6 +151,7 @@ export const api = {
       finishedAt: new Date().toISOString(),
       results: review.updates.map((u) => ({
         id: u.id,
+        revision: u.revision,
         title: u.title,
         result: "Succeeded",
       })),
@@ -160,6 +168,7 @@ export const api = {
     sampleStatus.lastOperation = op;
     sampleStatus.restartPending ||= op.restartRequired;
     sampleHistory.lastOperation = op;
+    sampleHistory.operations = [op, ...(sampleHistory.operations ?? [])];
     if (review.action === "install")
       sampleHistory.entries.unshift(
         ...review.updates.map((u) => ({

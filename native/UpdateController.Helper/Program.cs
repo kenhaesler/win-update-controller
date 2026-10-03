@@ -64,9 +64,9 @@ internal static class Program
             Protocol.Validate(request);
             object result = request.Command switch
             {
-                "status" => WindowsUpdates.Status(), "scan" => WindowsUpdates.Scan(), "history" => WindowsUpdates.History(), "notes" => ReleaseNotes.Fetch(request),
-                "review" => WindowsUpdates.Prepare(request), "enableManual" => Policy.Enable(), "restorePolicy" => Policy.Restore(),
-                "hide" or "unhide" => WindowsUpdates.SetHidden(request),
+                "status" => WindowsUpdates.Status(), "scan" => WindowsUpdates.Scan(), "history" => WindowsUpdates.History(), "reconcile" => WindowsUpdates.Reconcile(request), "notes" => ReleaseNotes.Fetch(request),
+                "review" => WindowsUpdates.Prepare(request), "enableManual" => WindowsUpdates.LogAction(request, Policy.Enable), "restorePolicy" => WindowsUpdates.LogAction(request, Policy.Restore),
+                "hide" or "unhide" => WindowsUpdates.LogAction(request, () => WindowsUpdates.SetHidden(request)),
                 "appRelease" => AppRelease.Fetch(), "autoDefender" => WindowsUpdates.AutoDefender(request),
                 "download" or "install" => WindowsUpdates.Run(request), _ => throw new ArgumentException("Unknown operation.")
             };

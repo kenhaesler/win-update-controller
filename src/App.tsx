@@ -42,9 +42,11 @@ import {
 } from "./preferences";
 import { demoScan } from "./demo";
 import ReleaseNotes from "./ReleaseNotes";
+import ActivityLog from "./ActivityLog";
 import type {
   Category,
   HistoryResult,
+  Operation,
   ScanResult,
   SystemStatus,
   Tab,
@@ -123,6 +125,25 @@ export default function App() {
   const releaseActive = useRef(false);
   const [history, setHistory] = useState<HistoryResult | null>(null);
   const [historyError, setHistoryError] = useState<string | null>(null);
+  const [historyQuery, setHistoryQuery] = useState("");
+  async function checkUnresolved(operation: Operation) {
+    await run("Checking unresolved packages…", async () => {
+      const next = await api.scan();
+      saveScan(next);
+      setStatus(await api.status());
+      const unresolved = operation.results.filter(r => r.result !== "Succeeded");
+      const candidates = next.updates.filter(u => !u.hidden && unresolved.some(r => r.id === u.id && r.revision === u.revision) && (operation.action !== "download" || !u.downloaded));
+      setSelected(new Set(candidates.map(u => u.id)));
+      setActiveId(candidates[0]?.id ?? null); setFilter("All"); setQuery(""); setTab("Updates");
+      setNotice(candidates.length ? `${candidates.length} unresolved packages are available. Review the new selection before continuing; nothing was downloaded or installed.` : "No unresolved exact package revisions are available for retry. Inspect Windows history; replacement packages require a separate selection.");
+    });
+  }
+  function exportDiagnostics() {
+    const blob = new Blob([JSON.stringify({ exportedAt: new Date().toISOString(), status, history }, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a"); link.href = url; link.download = "update-controller-diagnostics.json"; link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
   const [review, setReview] = useState<UpdateReview | null>(null);
   const [policyReview, setPolicyReview] = useState<"enable" | "restore" | null>(
     null,
@@ -873,7 +894,10 @@ export default function App() {
                 Refresh
               </button>
             </div>
-            {history?.lastOperation && (
+            {history && <div className="history-tools"><label>Search history<input aria-label="Search history" value={historyQuery} onChange={e => setHistoryQuery(e.target.value)} placeholder="Package, action, outcome or error code" /></label>
+              <button className="button outline" onClick={exportDiagnostics}>Export diagnostics</button></div>}
+            {history?.operations && <ActivityLog operations={history.operations} query={historyQuery} busy={!!busy} retry={operation => void checkUnresolved(operation)} />}
+            {history?.lastOperation && !history.operations?.length && (
               <div className="operation-summary">
                 <h2>Last app operation</h2>
                 <p>
@@ -935,7 +959,7 @@ export default function App() {
               </div>
             ) : (
               <div className="history-list">
-                {history.entries.map((entry, i) => (
+                {history.entries.filter(entry => `${entry.title} ${entry.action} ${entry.result} ${entry.code} ${entry.client}`.toLowerCase().includes(historyQuery.toLowerCase())).map((entry, i) => (
                   <div className="history-row" key={`${entry.date}-${i}`}>
                     {entry.result === "Succeeded" ? (
                       <CheckCircle2 className="positive-text" size={20} />
