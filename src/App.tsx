@@ -634,6 +634,18 @@ export default function App() {
                   />
                 </label>
               )}
+              <div className="selection-tools" aria-label="Package selection tools">
+                <button className="text-link" disabled={!!busy || !filtered.length}
+                  onClick={() => setSelected(new Set(filtered.map(u => u.id)))}>
+                  Select visible ({filtered.length})
+                </button>
+                {!hiddenView && <button className="text-link"
+                  disabled={!!busy || !filtered.some(u => u.downloaded)}
+                  onClick={() => setSelected(new Set(filtered.filter(u => u.downloaded).map(u => u.id)))}>
+                  Select downloaded ({filtered.filter(u => u.downloaded).length})
+                </button>}
+                <span className="muted">Replaces selection with matches in this view.</span>
+              </div>
               <div className="package-list">
                 {filtered.map((u) => (
                   <div
@@ -1207,6 +1219,8 @@ export default function App() {
                 ? `${selection.length} update${selection.length === 1 ? "" : "s"} selected`
                 : "No updates selected"}
             </strong>
+            {selection.some(u => !filtered.some(match => match.id === u.id)) &&
+              <p className="muted">{selection.filter(u => !filtered.some(match => match.id === u.id)).length} selected outside the search results</p>}
             {selection.length > 0 && (
               <button
                 className="clear-selection"

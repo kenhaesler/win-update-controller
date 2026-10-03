@@ -1386,3 +1386,13 @@ summary {
     border: 1px solid ButtonText;
   }
 }
+.selection-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  padding: 0 24px 12px;
+  font-size: 12px;
+}
+.selection-tools .text-link { margin: 0; }
+.selection-tools > span { flex-basis: 100%; }
