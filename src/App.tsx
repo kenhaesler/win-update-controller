@@ -49,6 +49,7 @@ import { discovered, identity, scanAge, sortUpdates, type SortOrder } from "./up
 import ReminderEditor from "./ReminderEditor";
 import { dueReminders, loadReminders, localDay, reminderIdentity, reminderKey, type ReviewReminder } from "./reminders";
 import { loadPolicyAlerts, policyChange } from "./policyChanges";
+import KnownIssueReview from "./KnownIssueReview";
 import type {
   Category,
   HistoryResult,
@@ -1474,6 +1475,7 @@ export default function App() {
                   </li>
                 ))}
               </ul>
+              {review.action === "install" && <KnownIssueReview updates={review.updates} version={status?.version} />}
               {review.licenses.map((license, i) => (
                 <details className="license" key={i}>
                   <summary>License terms: {license.title}</summary>

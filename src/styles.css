@@ -1415,3 +1415,10 @@ summary {
 .reminder-banner ul { padding-left: 20px; max-height: 180px; overflow: auto; }
 .reminder-banner li { padding: 8px 0; }
 .reminder-banner .text-link { margin-right: 16px; }
+.known-issue-review { padding-top: 16px; border-top: 1px solid var(--border); margin-top: 20px; }
+.known-issue-review > p { margin-top: 8px; }
+.package-issues { padding: 16px 0; border-top: 1px solid var(--border); }
+.package-issues p { margin-top: 8px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.package-issues details { margin-top: 10px; }
+.package-issues summary { cursor: pointer; }
+.package-issues .text-link { margin-right: 12px; }
