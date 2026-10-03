@@ -44,6 +44,7 @@ import { demoScan } from "./demo";
 import ReleaseNotes from "./ReleaseNotes";
 import { loadScanCache, writeStored } from "./storage";
 import { loadAppearance } from "./appearance";
+import ErrorDetails from "./ErrorDetails";
 import type {
   Category,
   HistoryResult,
@@ -95,6 +96,7 @@ export default function App() {
   const [query, setQuery] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [errorContext, setErrorContext] = useState("");
   const [notice, setNotice] = useState<string | null>(null);
   const [preferences, setPreferences] = useState(loadPreferences);
   const [release, setRelease] = useState<string | null>(null);
@@ -262,6 +264,7 @@ export default function App() {
     if (operationActive.current) return;
     operationActive.current = true;
     setBusy(label);
+    setErrorContext(label);
     setError(null);
     setNotice(null);
     try {
@@ -538,7 +541,15 @@ export default function App() {
       {error && (
         <div className="banner error-banner" role="alert">
           <CircleAlert size={18} />
-          <span>{error}</span>
+          <ErrorDetails error={error} context={errorContext} busy={!!busy}
+            recover={(action) => {
+              if (action === "settings") { setTab("Settings"); return; }
+              if (action === "scan") { setTab("Updates"); void check(); return; }
+              void run("Reading control status…", async () => {
+                setStatus(await api.status());
+                if (action === "history") { setTab("History"); setHistory(await api.history()); setHistoryError(null); }
+              });
+            }} />
           <button
             className="icon-button"
             aria-label="Dismiss error"
@@ -891,7 +902,7 @@ export default function App() {
               <div className="empty-state">
                 <CircleAlert size={30} />
                 <h2>Couldn’t read update history</h2>
-                <p>{historyError}</p>
+                <ErrorDetails error={historyError} />
                 <button
                   className="button outline"
                   disabled={!!busy}

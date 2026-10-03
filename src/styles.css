@@ -1386,3 +1386,9 @@ summary {
     border: 1px solid ButtonText;
   }
 }
+.error-details { flex: 1; min-width: 0; text-align: left; }
+.error-details p { margin: 6px 0; }
+.error-details details { margin-top: 8px; }
+.error-details summary { cursor: pointer; }
+.error-details pre { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; margin-top: 8px; }
+.error-banner { align-items: flex-start; }
