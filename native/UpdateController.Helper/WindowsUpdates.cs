@@ -52,7 +52,36 @@ public static class WindowsUpdates
         return new Package((string)update.Identity.UpdateID, (int)update.Identity.RevisionNumber, (string)update.Title, (string)update.Description,
             category, kb.ToArray(), urls.Distinct().ToArray(), ((DateTime)update.LastDeploymentChangeTime).ToUniversalTime().ToString("O"),
             Convert.ToDecimal((object)update.MaxDownloadSize), (bool)update.IsDownloaded, reboot switch { 0 => "Not expected", 1 => "Required", _ => "May be required" },
-            (int)update.InstallationBehavior.Impact == 2, (bool)update.EulaAccepted, bundles.ToArray(), (bool)update.IsHidden, DefenderEligible(update));
+            (int)update.InstallationBehavior.Impact == 2, (bool)update.EulaAccepted, bundles.ToArray(), (bool)update.IsHidden, DefenderEligible(update), ReadDriver(update), IsExcluded(update));
+    }
+    static DriverMetadata? ReadDriver(dynamic update)
+    {
+        if ((int)update.Type != 2) return null;
+        string? Read(Func<object> get) { try { return Convert.ToString(get()); } catch { return null; } }
+        return new DriverMetadata(Read(() => update.DriverHardwareID), Read(() => update.DriverModel), Read(() => update.DriverProvider),
+            Read(() => update.DriverManufacturer), Read(() => update.DriverClass), Read(() => update.DriverVerDate));
+    }
+    static bool IsExcluded(dynamic update)
+    {
+        var rules = DriverRules.Read();
+        if (rules.Length == 0) return false;
+        DriverMetadata? driver = ReadDriver(update);
+        if (driver != null && (string.IsNullOrWhiteSpace(driver.HardwareId) || DriverRules.Matches(driver.HardwareId, rules))) return true;
+        for (int i = 0; i < update.BundledUpdates.Count; i++) if (IsExcluded(update.BundledUpdates.Item(i))) return true;
+        return false;
+    }
+    public static object ExcludeDriver(Request request)
+    {
+        var item = request.Updates![0];
+        dynamic searcher = Session().CreateUpdateSearcher(); searcher.Online = false;
+        string identity = $"UpdateID='{item.Id}' and RevisionNumber={item.Revision} and IsInstalled=0";
+        dynamic result = searcher.Search($"{identity} and IsHidden=0 or {identity} and IsHidden=1");
+        if ((int)result.ResultCode != 2 || result.Updates.Count != 1) throw new Exception("The driver is no longer available. Check and review again.");
+        dynamic update = result.Updates.Item(0);
+        DriverMetadata? driver = ReadDriver(update);
+        if (driver == null) throw new Exception("Only a driver update can create a device exclusion.");
+        if (string.IsNullOrWhiteSpace(driver.HardwareId) || DriverRules.Normalize(driver.HardwareId) != DriverRules.Normalize(request.HardwareId!)) throw new Exception("The driver's hardware identity changed. Check and review the exclusion again.");
+        return DriverRules.Add(driver, (string)update.Title);
     }
     static bool DefenderEligible(dynamic update)
     {
@@ -138,6 +167,7 @@ public static class WindowsUpdates
             // Protocol validates GUIDs/revisions before interpolation; only exact approved identities resolve.
             dynamic found = searcher.Search($"UpdateID='{item.Id}' and RevisionNumber={item.Revision} and IsInstalled=0 and IsHidden=0");
             if ((int)found.ResultCode != 2 || found.Updates.Count != 1) throw new Exception("A selected update is no longer available. Check for updates and review your selection again.");
+            if (IsExcluded(found.Updates.Item(0))) throw new Exception("A selected package or bundled driver matches a device exclusion. Remove that exclusion in Settings before reviewing installation.");
             collection.Add(found.Updates.Item(0));
         }
         return collection;
@@ -170,14 +200,13 @@ public static class WindowsUpdates
     public static Review Prepare(Request request) => ReviewCollection(Resolve(request.Updates!), request.Action!);
     static void WriteOperation(OperationRecord operation)
     {
-        using var key = Registry.LocalMachine.CreateSubKey(Policy.StatePath, true);
-        key.SetValue("LastOperation", Protocol.Serialize(operation)); key.Flush();
+        OperationJournal.Write(operation);
     }
     static OperationRecord? ReadOperation()
     {
         using var key = Registry.LocalMachine.OpenSubKey(Policy.StatePath);
         var json = key?.GetValue("LastOperation") as string;
-        return json == null ? null : JsonSerializer.Deserialize<OperationRecord>(json, Protocol.Json);
+        return OperationJournal.Parse(json);
     }
     public static object Run(Request request, bool automatic = false)
     {
@@ -196,17 +225,17 @@ public static class WindowsUpdates
             if ((bool)task.RebootRequiredBeforeInstallation) throw new Exception("Windows needs a restart before another installation. No updates were installed by this request.");
         }
         var record = new OperationRecord(Guid.NewGuid().ToString(), request.Command, "running", Now(), null,
-            review.Updates.Select(x => (object)new { x.Id, x.Title, result = "Pending" }).ToArray(), false, null);
+            review.Updates.Select(x => new OperationResult(x.Id, x.Title, "Pending", Revision: x.Revision)).ToArray(), false, null);
         WriteOperation(record);
         try
         {
             if (!automatic) for (int i = 0; i < collection.Count; i++) AcceptLicenses(collection.Item(i));
-            dynamic result = request.Command == "install" ? task.Install() : task.Download();
-            var results = new List<object>();
+            dynamic result = AsyncServicing.Run((object)task, request.Command, review.Updates, record.Id, ProgressChannel.Publish);
+            var results = new List<OperationResult>();
             for (int i = 0; i < collection.Count; i++)
             {
                 dynamic item = result.GetUpdateResult(i);
-                results.Add(new { id = (string)collection.Item(i).Identity.UpdateID, title = (string)collection.Item(i).Title, result = Protocol.Outcome((int)item.ResultCode), code = $"0x{(int)item.HResult:X8}" });
+                results.Add(new OperationResult((string)collection.Item(i).Identity.UpdateID, (string)collection.Item(i).Title, Protocol.Outcome((int)item.ResultCode), $"0x{(int)item.HResult:X8}", (int)collection.Item(i).Identity.RevisionNumber));
             }
             bool restart = request.Command == "install" && (bool)result.RebootRequired;
             record = record with { State = (int)result.ResultCode == 2 ? "completed" : "partialOrFailed", FinishedAt = Now(), Results = results.ToArray(), RestartRequired = restart, Message = Protocol.Outcome((int)result.ResultCode) };
@@ -233,6 +262,50 @@ public static class WindowsUpdates
                 entries.Add(new { title = (string)entry.Title, date = ((DateTime)entry.Date).ToUniversalTime().ToString("O"), result = Protocol.Outcome((int)entry.ResultCode), code = $"0x{(int)entry.HResult:X8}", action = (int)entry.Operation == 1 ? "Installation" : "Uninstallation", client = (string)entry.ClientApplicationID });
             }
         }
-        return new { entries, lastOperation = ReadOperation() };
+        searcher.Online = false;
+        var operations = OperationJournal.ReadAll().Select(o => o.State is "running" or "uncertain" && o.Action is "install" or "download" ? ObserveCurrent(o, (object)searcher) : o).ToArray();
+        return new { entries, lastOperation = ReadOperation(), operations };
+    }
+    public static object LogAction(Request request, Func<object> action)
+    {
+        var record = new OperationRecord(Guid.NewGuid().ToString(), request.Command, "running", Now(), null,
+            (request.Updates ?? []).Select(u => new OperationResult(u.Id, u.Id, "Pending", Revision: u.Revision)).ToArray(), false, null);
+        WriteOperation(record);
+        try
+        {
+            var data = action();
+            var results = record.Results;
+            if (request.Command is "hide" or "unhide")
+            {
+                var json = JsonSerializer.SerializeToElement(data, Protocol.Json);
+                results = json.GetProperty("results").EnumerateArray().Select(r => new OperationResult(
+                    r.GetProperty("id").GetString()!, r.GetProperty("id").GetString()!, r.GetProperty("success").GetBoolean() ? "Succeeded" : "Failed",
+                    r.GetProperty("error").GetString(), r.GetProperty("revision").GetInt32())).ToArray();
+            }
+            WriteOperation(record with { State = results.Any(r => r.Result == "Failed") ? "partialOrFailed" : "completed", Results = results, FinishedAt = Now(), Message = "Request finished." });
+            return data;
+        }
+        catch (Exception ex) { WriteOperation(record with { State = "uncertain", FinishedAt = Now(), Message = ex.Message }); throw; }
+    }
+    public static object Reconcile(Request request)
+    {
+        var record = OperationJournal.ReadAll().FirstOrDefault(r => r.Id == request.OperationId) ?? throw new Exception("This operation is no longer available.");
+        if (record.Action is not ("install" or "download")) return record;
+        dynamic searcher = Session().CreateUpdateSearcher(); searcher.Online = false;
+        return ObserveCurrent(record, (object)searcher);
+    }
+    static OperationRecord ObserveCurrent(OperationRecord record, object searcherObject)
+    {
+        dynamic searcher = searcherObject;
+        return OperationJournal.Observe(record, r => {
+            if (!Guid.TryParse(r.Id, out _) || r.Revision is not >= 0) return "Exact revision unavailable in this older record.";
+            try {
+                var identity = $"UpdateID='{r.Id}' and RevisionNumber={r.Revision}";
+                dynamic result = searcher.Search($"{identity} and IsInstalled=0 and IsHidden=0 or {identity} and IsInstalled=0 and IsHidden=1 or {identity} and IsInstalled=1");
+                if ((int)result.ResultCode != 2 || result.Updates.Count != 1) return "Not present in current Windows metadata; completion remains unknown.";
+                dynamic update = result.Updates.Item(0);
+                return (bool)update.IsInstalled ? "Currently installed" : (bool)update.IsDownloaded ? "Currently downloaded; not installed" : "Currently not downloaded or installed";
+            } catch { return "Current state unavailable; check Windows history."; }
+        });
     }
 }

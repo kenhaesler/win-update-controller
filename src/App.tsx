@@ -42,14 +42,29 @@ import {
 } from "./preferences";
 import { demoScan } from "./demo";
 import ReleaseNotes from "./ReleaseNotes";
+import { loadScanCache, writeStored } from "./storage";
+import { loadAppearance } from "./appearance";
+import ErrorDetails from "./ErrorDetails";
+import { discovered, identity, scanAge, sortUpdates, type SortOrder } from "./updateList";
+import ReminderEditor from "./ReminderEditor";
+import { dueReminders, loadReminders, localDay, reminderIdentity, reminderKey, type ReviewReminder } from "./reminders";
+import OperationProgress from "./OperationProgress";
+import { validProgress, type ProgressSnapshot } from "./progress";
+import { loadPolicyAlerts, policyChange } from "./policyChanges";
+import KnownIssueReview from "./KnownIssueReview";
+import ActivityLog from "./ActivityLog";
+import DriverExclusion from "./DriverExclusion";
+import ToolbarMenu from "./ToolbarMenu";
 import type {
   Category,
   HistoryResult,
+  Operation,
+  DriverRule,
   ScanResult,
   SystemStatus,
   Tab,
-  UpdatePackage,
   UpdateReview,
+  UpdatePackage,
 } from "./types";
 
 function Mark() {
@@ -79,40 +94,59 @@ function PackageIcon({ category }: { category: Category }) {
 }
 function loadCache(): ScanResult | null {
   if (preview) return demoScan;
-  try {
-    const raw = localStorage.getItem("update-controller.scan.v1");
-    if (!raw) return null;
-    const data = JSON.parse(raw);
-    if (
-      !Array.isArray(data.updates) ||
-      typeof data.checkedAt !== "string" ||
-      !data.updates.every(
-        (u: UpdatePackage) =>
-          typeof u.id === "string" &&
-          typeof u.title === "string" &&
-          Array.isArray(u.supportUrls) &&
-          Array.isArray(u.bundles),
-      )
-    )
-      return null;
-    return data;
-  } catch {
-    return null;
-  }
+  return loadScanCache();
 }
 
 export default function App() {
   const [tab, setTab] = useState<Tab>("Updates");
   const [status, setStatus] = useState<SystemStatus | null>(null);
+  const previousStatus = useRef<SystemStatus | null>(null);
+  const policyMutation = useRef(false);
+  const [policyAlerts, setPolicyAlerts] = useState(loadPolicyAlerts);
+  const policyAlertsRef = useRef(policyAlerts);
+  policyAlertsRef.current = policyAlerts;
   const [scan, setScan] = useState<ScanResult | null>(loadCache);
+  const [reminders, setReminders] = useState(loadReminders);
+  const [reminderDay, setReminderDay] = useState(localDay);
+  const deliveredReminders = useRef(new Set<string>());
+  const due = dueReminders(reminders, reminderDay);
+  function saveReminder(update: { id: string; revision: number }, reminder: ReviewReminder | null) {
+    const next = reminders.filter(r => reminderIdentity(r) !== reminderIdentity(update));
+    if (reminder) next.push(reminder);
+    try {
+      localStorage.setItem(reminderKey, JSON.stringify(next));
+      deliveredReminders.current.delete(reminderIdentity(update) + "." + (reminder?.reviewDate ?? ""));
+      setReminders(next);
+      setNotice(reminder ? "Review reminder saved. No update action was started." : "Review reminder removed.");
+    } catch { setError("Could not save the reminder. Check available storage and try again."); }
+  }
+  useEffect(() => {
+    const timer = setInterval(() => setReminderDay(localDay()), 60_000);
+    return () => clearInterval(timer);
+  }, []);
+  useEffect(() => {
+    const notify = due.filter(r => !r.notified && !deliveredReminders.current.has(reminderIdentity(r) + "." + r.reviewDate));
+    if (!notify.length) return;
+    notify.forEach(r => deliveredReminders.current.add(reminderIdentity(r) + "." + r.reviewDate));
+    const keys = new Set(notify.map(reminderIdentity));
+    const next = reminders.map(r => keys.has(reminderIdentity(r)) ? { ...r, notified: true } : r);
+    try { localStorage.setItem(reminderKey, JSON.stringify(next)); setReminders(next); } catch { /* Due reminders remain visible even without storage. */ }
+    void api.notifyReviewDue(notify.length).catch(() => { /* The persistent in-app due list remains available. */ });
+  }, [reminders, reminderDay]);
   const [activeId, setActiveId] = useState<string | null>(
     () => loadCache()?.updates[0]?.id ?? null,
   );
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [filter, setFilter] = useState("All");
   const [query, setQuery] = useState("");
+  const [sort, setSort] = useState<SortOrder>("default");
+  const [cachedResults, setCachedResults] = useState(() => !preview && !!loadCache());
+  const [newPackages, setNewPackages] = useState<Set<string>>(new Set());
+  const [now, setNow] = useState(Date.now);
   const [busy, setBusy] = useState<string | null>(null);
+  const [progress, setProgress] = useState<{ report: ProgressSnapshot; receivedAt: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [errorContext, setErrorContext] = useState("");
   const [notice, setNotice] = useState<string | null>(null);
   const [preferences, setPreferences] = useState(loadPreferences);
   const [release, setRelease] = useState<string | null>(null);
@@ -123,15 +157,50 @@ export default function App() {
   const releaseActive = useRef(false);
   const [history, setHistory] = useState<HistoryResult | null>(null);
   const [historyError, setHistoryError] = useState<string | null>(null);
+  const [historyQuery, setHistoryQuery] = useState("");
+  const [driverRules, setDriverRules] = useState<DriverRule[]>([]);
+  const [driverRulesError, setDriverRulesError] = useState<string | null>(null);
+  useEffect(() => { void api.driverRules().then(rules => {
+    setDriverRules(rules);
+    setScan(current => current && ({ ...current, updates: current.updates.map(u => u.driver || u.category === "Drivers" ? {
+      ...u, excluded: rules.length > 0 && (!u.driver?.hardwareId || rules.some(r => r.hardwareId.toUpperCase() === u.driver?.hardwareId?.toUpperCase())),
+    } : u) }));
+  }).catch(e => setDriverRulesError(String(e))); }, []);
+  async function changeDriverRule(update?: UpdatePackage, ruleId?: string) {
+    await run("Saving device exclusions…", async () => {
+      setDriverRules(update ? await api.excludeDriver(update) : await api.removeDriverRule(ruleId!));
+      setDriverRulesError(null);
+      saveScan(await api.scan()); setSelected(new Set());
+      setNotice(update ? "Device exclusion saved. Matching drivers cannot be downloaded or installed by the controller." : "Device exclusion removed. Windows-hidden packages remain hidden until you restore them.");
+    });
+  }
+  async function checkUnresolved(operation: Operation) {
+    await run("Checking unresolved packages…", async () => {
+      const next = await api.scan();
+      saveScan(next);
+      setStatus(await api.status());
+      const unresolved = operation.results.filter(r => r.result !== "Succeeded");
+      const candidates = next.updates.filter(u => !u.hidden && !u.excluded && unresolved.some(r => r.id === u.id && r.revision === u.revision) && (operation.action !== "download" || !u.downloaded));
+      setSelected(new Set(candidates.map(u => u.id)));
+      setActiveId(candidates[0]?.id ?? null); setFilter("All"); setQuery(""); setTab("Updates");
+      setNotice(candidates.length ? `${candidates.length} unresolved packages are available. Review the new selection before continuing; nothing was downloaded or installed.` : "No unresolved exact package revisions are available for retry. Inspect Windows history; replacement packages require a separate selection.");
+    });
+  }
+  function exportDiagnostics() {
+    const blob = new Blob([JSON.stringify({ exportedAt: new Date().toISOString(), status, history }, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a"); link.href = url; link.download = "update-controller-diagnostics.json"; link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
   const [review, setReview] = useState<UpdateReview | null>(null);
   const [policyReview, setPolicyReview] = useState<"enable" | "restore" | null>(
     null,
   );
   const [accepted, setAccepted] = useState(false);
   const [showDetail, setShowDetail] = useState(false);
-  const [theme, setTheme] = useState(
-    () => localStorage.getItem("update-controller.theme") || "dark",
-  );
+  const [theme, setTheme] = useState(loadAppearance);
+  const [systemDark, setSystemDark] = useState(() => window.matchMedia("(prefers-color-scheme: dark)").matches);
+  const resolvedTheme = theme === "system" ? systemDark ? "dark" : "light" : theme;
   const dialog = useRef<HTMLDialogElement>(null);
   const actionRef = useRef<HTMLButtonElement>(null);
   const dialogInvoker = useRef<HTMLElement | null>(null);
@@ -141,25 +210,39 @@ export default function App() {
   const reduceMotion = useReducedMotion();
   const packages = scan?.updates ?? [];
   const hiddenView = filter === "Hidden";
-  const visiblePackages = packages.filter((u) => !!u.hidden === hiddenView);
+  const excludedView = filter === "Excluded";
+  const visiblePackages = packages.filter((u) => hiddenView ? !!u.hidden : excludedView ? !!u.excluded && !u.hidden : !u.hidden && !u.excluded);
   const active = visiblePackages.find((u) => u.id === activeId);
   const selection = visiblePackages.filter((u) => selected.has(u.id));
   const action = selectedAction(selection);
-  const filtered = visiblePackages.filter(
+  const filtered = sortUpdates(visiblePackages.filter(
     (u) =>
       (filter === "All" ||
         filter === "Hidden" ||
+        (filter === "Downloaded" && u.downloaded) ||
+        filter === "Excluded" ||
         u.category === filter ||
         (filter === "Optional" && u.category === "Drivers")) &&
       `${u.title} ${u.kbIds.join(" ")}`
         .toLowerCase()
         .includes(query.toLowerCase()),
-  );
+  ), sort);
+  const selectable = filtered.filter(u => !u.excluded);
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 60_000);
+    return () => clearInterval(timer);
+  }, []);
 
   useEffect(() => {
-    document.documentElement.dataset.theme = theme;
-    localStorage.setItem("update-controller.theme", theme);
-  }, [theme]);
+    document.documentElement.dataset.theme = resolvedTheme;
+    writeStored("update-controller.theme", theme);
+  }, [theme, resolvedTheme]);
+  useEffect(() => {
+    const media = window.matchMedia("(prefers-color-scheme: dark)");
+    const changed = () => setSystemDark(media.matches);
+    media.addEventListener("change", changed);
+    return () => media.removeEventListener("change", changed);
+  }, []);
   useEffect(() => {
     if (started.current) return;
     started.current = true;
@@ -204,7 +287,17 @@ export default function App() {
       api
         .status()
         .then((s) => {
-          if (alive) setStatus(s);
+          if (alive) {
+            const message = previousStatus.current && !policyMutation.current ? policyChange(previousStatus.current, s) : null;
+            previousStatus.current = s;
+            setStatus(s);
+            if (message) {
+              setNotice(message);
+              if (policyAlertsRef.current) void api.notifyPolicyChange(message).catch(() => {
+                if (alive) setNotice(message + " Windows notification delivery was unavailable; this alert remains in the controller.");
+              });
+            }
+          }
         })
         .catch((e) => {
           if (alive) {
@@ -270,10 +363,19 @@ export default function App() {
       void unsub.then((fn) => fn());
     };
   }, []);
+  useEffect(() => {
+    if (preview) return;
+    const unsub = import("@tauri-apps/api/event").then(({ listen }) => listen<unknown>("operation-progress", event => {
+      if (operationActive.current && validProgress(event.payload)) setProgress({ report: event.payload, receivedAt: Date.now() });
+    }));
+    return () => { void unsub.then(fn => fn()); };
+  }, []);
   async function run(label: string, work: () => Promise<void>) {
     if (operationActive.current) return;
     operationActive.current = true;
     setBusy(label);
+    setErrorContext(label);
+    setProgress(null);
     setError(null);
     setNotice(null);
     try {
@@ -283,6 +385,7 @@ export default function App() {
     } finally {
       operationActive.current = false;
       setBusy(null);
+      setProgress(null);
     }
   }
   function saveScan(next: ScanResult) {
@@ -298,6 +401,9 @@ export default function App() {
   async function check() {
     await run("Checking for updates…", async () => {
       const result = await api.scan();
+      setNewPackages(discovered(result.updates, packages));
+      setCachedResults(false);
+      setNow(Date.now());
       const available = result.updates.filter((u) => !u.hidden);
       saveScan(result);
       setSelected(new Set());
@@ -338,7 +444,7 @@ export default function App() {
     });
   }
   async function beginReview() {
-    if (hiddenView || selection.some((u) => u.hidden)) return;
+    if (hiddenView || selection.some((u) => u.hidden || u.excluded)) return;
     dialogInvoker.current = document.activeElement as HTMLElement;
     await run("Preparing your selection…", async () => {
       setAccepted(false);
@@ -406,6 +512,12 @@ export default function App() {
             .filter((x) => x.result === "Succeeded")
             .map((x) => x.id),
         );
+        if (approved.action === "install") {
+          const remaining = reminders.filter(r => !succeeded.has(r.id) || !approved.updates.some(u => reminderIdentity(u) === reminderIdentity(r)));
+          setReminders(remaining);
+          try { localStorage.setItem(reminderKey, JSON.stringify(remaining)); }
+          catch { setError("The operation finished, but completed-package reminders could not be cleared from storage."); }
+        }
         if (scan)
           saveScan({
             ...scan,
@@ -432,7 +544,12 @@ export default function App() {
     await run(
       enable ? "Configuring manual mode…" : "Restoring previous policy…",
       async () => {
-        setStatus(await api.policy(enable));
+        policyMutation.current = true;
+        try {
+          const updated = await api.policy(enable);
+          previousStatus.current = updated;
+          setStatus(updated);
+        } finally { policyMutation.current = false; }
         setNotice(
           enable
             ? "Manual-mode policy saved. Check the status details for verification and any existing pending restart."
@@ -516,10 +633,10 @@ export default function App() {
         })}
         <button
           className="theme-button icon-button"
-          aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} theme`}
-          onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+          aria-label={`Switch to ${resolvedTheme === "dark" ? "light" : "dark"} theme`}
+          onClick={() => setTheme(resolvedTheme === "dark" ? "light" : "dark")}
         >
-          {theme === "dark" ? <Sun size={18} /> : <Moon size={18} />}
+          {resolvedTheme === "dark" ? <Sun size={18} /> : <Moon size={18} />}
         </button>
       </nav>
       {status?.restartPending && (
@@ -550,7 +667,15 @@ export default function App() {
       {error && (
         <div className="banner error-banner" role="alert">
           <CircleAlert size={18} />
-          <span>{error}</span>
+          <ErrorDetails error={error} context={errorContext} busy={!!busy}
+            recover={(action) => {
+              if (action === "settings") { setTab("Settings"); return; }
+              if (action === "scan") { setTab("Updates"); void check(); return; }
+              void run("Reading control status…", async () => {
+                setStatus(await api.status());
+                if (action === "history") { setTab("History"); setHistory(await api.history()); setHistoryError(null); }
+              });
+            }} />
           <button
             className="icon-button"
             aria-label="Dismiss error"
@@ -573,10 +698,21 @@ export default function App() {
           </button>
         </div>
       )}
+      {due.length > 0 && <div className="banner reminder-banner">
+        <Clock3 size={18} /><details><summary>{due.length} update reminder{due.length === 1 ? "" : "s"} due for review</summary>
+          <ul>{due.map(r => <li key={reminderIdentity(r)}>
+            <strong>{r.title}</strong> · {r.reviewDate}{r.reason && <p>{r.reason}</p>}
+            {packages.some(u => reminderIdentity(u) === reminderIdentity(r)) ?
+              <button className="text-link" onClick={() => { setTab("Updates"); setFilter(packages.find(u => u.id === r.id)?.hidden ? "Hidden" : "All"); setActiveId(r.id); setShowDetail(true); }}>Review package</button> :
+              <p className="muted">Check for updates to see whether this package is still available.</p>}
+            <button className="text-link" onClick={() => saveReminder(r, null)}>Dismiss reminder for {r.title}</button>
+          </li>)}</ul></details>
+      </div>}
       {busy && (
         <div className="operation-banner" role="status" aria-live="polite">
           <LoaderCircle size={17} className="spin" />
           <span>{busy}</span>
+          {progress && <OperationProgress report={progress.report} receivedAt={progress.receivedAt} />}
           <span className="muted">
             {busy.startsWith("Installing")
               ? "Windows is working. You can keep using your PC."
@@ -600,12 +736,12 @@ export default function App() {
                   {preview
                     ? "Sample packages for exploring the interface"
                     : scan
-                      ? `Last checked ${dateLabel(scan.checkedAt)} · ${new Date(scan.checkedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`
+                      ? `${cachedResults ? "Cached results" : "Last checked"} · ${scanAge(scan.checkedAt, now)} · ${dateLabel(scan.checkedAt)}`
                       : "Check to see what’s available for your PC"}
                 </p>
               </div>
               <div className="filters" aria-label="Filter updates">
-                {["All", "Security", "Drivers", "Optional", "Hidden"].map(
+                {["All", "Security", "Drivers", "Optional"].map(
                   (f) => (
                     <button
                       key={f}
@@ -622,6 +758,33 @@ export default function App() {
                     </button>
                   ),
                 )}
+                <ToolbarMenu label={["Downloaded", "Excluded", "Hidden"].includes(filter) ? filter : "More"}
+                  accessibleLabel="More update filters" filter selected={["Downloaded", "Excluded", "Hidden"].includes(filter)} disabled={!!busy}>
+                  {["Downloaded", "Excluded", "Hidden"].map(f => <button key={f} aria-pressed={filter === f}
+                    disabled={!!busy} onClick={() => { setFilter(f); setSelected(new Set()); setActiveId(null); }}>{f}</button>)}
+                </ToolbarMenu>
+              </div>
+              <div className="list-tools">
+              <label className="sort-control"><span className="sr-only">Sort updates</span>
+                <select aria-label="Sort updates" value={sort} disabled={!!busy}
+                  onChange={e => setSort(e.target.value as SortOrder)}>
+                  <option value="default">Windows order</option>
+                  <option value="newest">Newest first</option>
+                  <option value="size">Smallest download first</option>
+                  <option value="restart">Restart required first</option>
+                </select>
+              </label>
+              <ToolbarMenu label="Select" accessibleLabel="Package selection tools" disabled={!!busy}>
+                <button disabled={!!busy || !selectable.length}
+                  onClick={() => setSelected(new Set(selectable.map(u => u.id)))}>
+                  Select visible ({selectable.length})
+                </button>
+                {!hiddenView && <button disabled={!!busy || !selectable.some(u => u.downloaded)}
+                  onClick={() => setSelected(new Set(selectable.filter(u => u.downloaded).map(u => u.id)))}>
+                  Select downloaded ({selectable.filter(u => u.downloaded).length})
+                </button>}
+                <p className="muted">Replaces selection with matches in this view.</p>
+              </ToolbarMenu>
               </div>
               {packages.length > 5 && (
                 <label className="search">
@@ -646,7 +809,7 @@ export default function App() {
                       checked={selected.has(u.id)}
                       aria-label={`Select ${u.title}`}
                       onChange={() => toggle(u.id)}
-                      disabled={!!busy}
+                      disabled={!!busy || !!u.excluded}
                     />
                     <button
                       ref={(el) => {
@@ -663,7 +826,7 @@ export default function App() {
                     >
                       <PackageIcon category={u.category} />
                       <span className="package-copy">
-                        <span className="package-title">{u.title}</span>
+                        <span className="package-title">{u.title}{newPackages.has(identity(u)) && <span className="new-update" aria-label="New since previous check"> · New</span>}</span>
                         <span className="package-subtitle">
                           {u.kbIds.length
                             ? u.kbIds.map((kb) => `KB${kb}`).join(", ")
@@ -671,7 +834,8 @@ export default function App() {
                               ? "Windows 11 · Cumulative update"
                               : u.category === "Drivers"
                                 ? "Driver update"
-                                : "Stability and performance"}
+                              : "Stability and performance"}
+                          {u.downloaded ? " · Ready to install" : " · Not downloaded"}
                         </span>
                       </span>
                       <span className="package-meta">
@@ -835,6 +999,11 @@ export default function App() {
                       )}
                     </section>
                     <ReleaseNotes key={active.id} update={active} />
+                    <ReminderEditor key={reminderIdentity(active) + (reminders.find(r => reminderIdentity(r) === reminderIdentity(active))?.reviewDate ?? "")}
+                      update={active} reminder={reminders.find(r => reminderIdentity(r) === reminderIdentity(active))}
+                      save={reminder => saveReminder(active, reminder)} />
+                    {active.excluded && active.category !== "Drivers" && <p className="inline-warning">This package includes an excluded driver. Review device exclusions in Settings.</p>}
+                    {active.category === "Drivers" && <DriverExclusion key={`driver.${active.id}.${active.revision}`} update={active} busy={!!busy} exclude={() => void changeDriverRule(active)} />}
                   </motion.article>
                 ) : (
                   <div className="empty-state reader-empty">
@@ -873,7 +1042,10 @@ export default function App() {
                 Refresh
               </button>
             </div>
-            {history?.lastOperation && (
+            {history && <div className="history-tools"><label>Search history<input aria-label="Search history" value={historyQuery} onChange={e => setHistoryQuery(e.target.value)} placeholder="Package, action, outcome or error code" /></label>
+              <button className="button outline" onClick={exportDiagnostics}>Export diagnostics</button></div>}
+            {history?.operations && <ActivityLog operations={history.operations} query={historyQuery} busy={!!busy} retry={operation => void checkUnresolved(operation)} />}
+            {history?.lastOperation && !history.operations?.length && (
               <div className="operation-summary">
                 <h2>Last app operation</h2>
                 <p>
@@ -903,7 +1075,7 @@ export default function App() {
               <div className="empty-state">
                 <CircleAlert size={30} />
                 <h2>Couldn’t read update history</h2>
-                <p>{historyError}</p>
+                <ErrorDetails error={historyError} />
                 <button
                   className="button outline"
                   disabled={!!busy}
@@ -935,7 +1107,7 @@ export default function App() {
               </div>
             ) : (
               <div className="history-list">
-                {history.entries.map((entry, i) => (
+                {history.entries.filter(entry => `${entry.title} ${entry.action} ${entry.result} ${entry.code} ${entry.client}`.toLowerCase().includes(historyQuery.toLowerCase())).map((entry, i) => (
                   <div className="history-row" key={`${entry.date}-${i}`}>
                     {entry.result === "Succeeded" ? (
                       <CheckCircle2 className="positive-text" size={20} />
@@ -1102,6 +1274,10 @@ export default function App() {
                 <p>A comfortable reading surface, day or night.</p>
               </div>
               <div className="theme-options">
+                <button className={`filter ${theme === "system" ? "selected" : ""}`}
+                  aria-pressed={theme === "system"} onClick={() => setTheme("system")}>
+                  <Monitor size={15} /> System
+                </button>
                 <button
                   className={`filter ${theme === "dark" ? "selected" : ""}`}
                   aria-pressed={theme === "dark"}
@@ -1119,6 +1295,16 @@ export default function App() {
                   Light
                 </button>
               </div>
+            </div>
+            <div className="setting-row">
+              <div><h2>Notify when update control changes</h2>
+                <p id="policy-alert-help">Show Windows notifications when manual mode, management conflicts or the Update Agent change outside the controller. Checks run once a minute while the app is open. Changes also appear inside the app.</p></div>
+              <input type="checkbox" className="package-checkbox" aria-label="Notify when update control changes"
+                aria-describedby="policy-alert-help" checked={policyAlerts}
+                onChange={e => {
+                  try { localStorage.setItem("update-controller.policy-alerts", String(e.target.checked)); setPolicyAlerts(e.target.checked); }
+                  catch { setError("Could not save notification preference. The setting was not changed."); }
+                }} />
             </div>
             <section className="settings-detail">
               <h2>What the app can confirm</h2>
@@ -1183,6 +1369,13 @@ export default function App() {
             </section>
             <section className="settings-detail">
               <h2>Scope & limits</h2>
+              <h3>Device driver exclusions</h3>
+              <p className="muted">Rules block matching controller downloads and installations, including bundled drivers. Unknown driver identities are blocked while any rule is active. Removing a rule does not restore Windows-hidden packages.</p>
+              {driverRulesError && <p className="inline-warning">Could not read driver exclusions: {driverRulesError}</p>}
+              <button className="text-link" disabled={!!busy} onClick={() => void api.driverRules().then(rules => { setDriverRules(rules); setDriverRulesError(null); }).catch(e => setDriverRulesError(String(e)))}>Refresh driver exclusions</button>
+              {!driverRulesError && driverRules.length === 0 && <p className="muted">No device driver exclusions saved.</p>}
+              {driverRules.map(rule => <div key={rule.id} className="driver-rule"><div><strong>{rule.label}</strong><p className="driver-id">{rule.hardwareId}</p></div>
+                <button className="button outline" disabled={!!busy} onClick={() => void changeDriverRule(undefined, rule.id)}>Remove exclusion for {rule.label}</button></div>)}
               <p className="muted">
                 Manual mode cannot undo updates already staged for a restart.
                 Cumulative fixes are selected as a package. Store apps,
@@ -1207,6 +1400,8 @@ export default function App() {
                 ? `${selection.length} update${selection.length === 1 ? "" : "s"} selected`
                 : "No updates selected"}
             </strong>
+            {selection.some(u => !filtered.some(match => match.id === u.id)) &&
+              <p className="muted">{selection.filter(u => !filtered.some(match => match.id === u.id)).length} selected outside the search results</p>}
             {selection.length > 0 && (
               <button
                 className="clear-selection"
@@ -1355,6 +1550,7 @@ export default function App() {
                   </li>
                 ))}
               </ul>
+              {review.action === "install" && <KnownIssueReview updates={review.updates} version={status?.version} />}
               {review.licenses.map((license, i) => (
                 <details className="license" key={i}>
                   <summary>License terms: {license.title}</summary>

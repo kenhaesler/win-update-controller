@@ -20,16 +20,17 @@ export function loadPreferences(): Preferences {
   return defaults;
 }
 export function newerVersion(latest: string, current: string): boolean {
-  const parse = (value: string) => {
+  const parse = (value: string, allowPrerelease = false) => {
     const match =
-      /^v?(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:\+[\w.-]+)?$/.exec(value);
-    if (!match) throw new Error("The release has an unsupported version tag.");
-    return match.slice(1, 4).map(BigInt);
+      /^v?(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?(?:\+[\w.-]+)?$/.exec(value);
+    if (!match || (match[4] && (!allowPrerelease || match[4].split(".").some(part => /^0\d+$/.test(part)))))
+      throw new Error("The release has an unsupported version tag.");
+    return { parts: match.slice(1, 4).map(BigInt), prerelease: !!match[4] };
   };
   const next = parse(latest),
-    installed = parse(current);
+    installed = parse(current, true);
   for (let i = 0; i < 3; i++) {
-    if (next[i] !== installed[i]) return next[i] > installed[i];
+    if (next.parts[i] !== installed.parts[i]) return next.parts[i] > installed.parts[i];
   }
-  return false;
+  return installed.prerelease;
 }

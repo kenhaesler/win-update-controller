@@ -1,0 +1,28 @@
+import { test, expect } from "@playwright/test";
+import AxeBuilder from "@axe-core/playwright";
+import { openToolbarMenu } from "./toolbar.helpers";
+test("compact toolbars reveal secondary actions and close with keyboard or outside clicks", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.getByRole("button", { name: "Hidden", exact: true })).toBeHidden();
+  await page.screenshot({ path: "test-results/toolbar-desktop.png" });
+  const more = page.getByRole("button", { name: "More update filters", exact: true });
+  await more.focus(); await page.keyboard.press("Enter");
+  await expect(page.getByRole("button", { name: "Hidden", exact: true })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(more).toBeFocused();
+  await expect(page.getByRole("button", { name: "Hidden", exact: true })).toBeHidden();
+  await openToolbarMenu(page, "Package selection tools");
+  await page.getByRole("button", { name: "Select visible (3)", exact: true }).click();
+  await expect(page.getByText("3 updates selected", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Select visible (3)", exact: true })).toBeHidden();
+  await openToolbarMenu(page, "More update filters");
+  await page.getByRole("heading", { name: "Available updates", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Hidden", exact: true })).toBeHidden();
+  await page.setViewportSize({ width: 700, height: 800 });
+  await page.screenshot({ path: "test-results/toolbar-compact.png" });
+  await openToolbarMenu(page, "Package selection tools");
+  await page.screenshot({ path: "test-results/toolbar-menu.png" });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  const violations = await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21aa"]).analyze();
+  expect(violations.violations).toEqual([]);
+});

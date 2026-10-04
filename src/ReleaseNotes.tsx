@@ -1,50 +1,37 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ArrowUpRight, FileText, LoaderCircle } from "lucide-react";
-import { invoke } from "@tauri-apps/api/core";
 import { dateLabel, officialLink, openOfficial, preview } from "./api";
 import type { UpdatePackage } from "./types";
-
-interface Notes {
-  source: string;
-  retrievedAt: string;
-  title: string;
-  sections: { heading: string; text: string }[];
-  unavailableReason: string | null;
-}
+import { fetchNotes as loadOfficialNotes, readNotes, type Notes } from "./notes";
 export default function ReleaseNotes({ update }: { update: UpdatePackage }) {
+  return <PackageNotes key={`${update.id}.${update.revision}`} update={update} />;
+}
+function PackageNotes({ update }: { update: UpdatePackage }) {
   const [notes, setNotes] = useState<Notes | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const currentRequest = useRef(0);
   const cacheKey = `update-controller.notes.${update.id}.${update.revision}`;
   const links = update.supportUrls.filter(officialLink);
+  useEffect(() => () => { currentRequest.current++; }, []);
   useEffect(() => {
     setNotes(null);
     setError(null);
-    try {
-      const saved = localStorage.getItem(cacheKey);
-      if (saved) {
-        const value = JSON.parse(saved);
-        if (Array.isArray(value.sections) && officialLink(value.source))
-          setNotes(value);
-      }
-    } catch {
-      /* Cached sources are optional. */
-    }
+    setNotes(readNotes(update));
   }, [cacheKey]);
   async function fetchNotes() {
     if (!links[0] || preview) return;
+    const requestId = ++currentRequest.current;
     setLoading(true);
     setError(null);
     try {
-      const next = await invoke<Notes>("windows_request", {
-        request: { command: "notes", url: links[0], kbIds: update.kbIds },
-      });
+      const next = await loadOfficialNotes(update);
+      if (requestId !== currentRequest.current) return;
       setNotes(next);
-      localStorage.setItem(cacheKey, JSON.stringify(next));
     } catch (e) {
-      setError(String(e));
+      if (requestId === currentRequest.current) setError(String(e));
     } finally {
-      setLoading(false);
+      if (requestId === currentRequest.current) setLoading(false);
     }
   }
   async function open(url: string) {

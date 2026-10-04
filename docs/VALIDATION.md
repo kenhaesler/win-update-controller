@@ -1,5 +1,27 @@
 # Validation and release status
 
+## Toolbar refinement for the test candidate
+
+Simplified the update-list toolbar after user feedback: four primary filters, secondary filters in More, and a single row for sorting and Select. Selection scope help appears only when the menu is open. All 27 browser tests passed, including secondary filters, bulk-selection semantics, Escape/outside-click handling, compact overflow and dark/light accessibility. Desktop, compact and menu layouts were inspected; layout detection returned no findings.
+
+## Isolated test candidate 0.1.4-test.1
+
+Prepared `codex/test-all-features` from the combined integration head after verifying ancestry of all 14 remote feature PR heads. Separate test product name, identifier, window title, and uninstall hook preserve stable-app settings and retain shared machine policy during test-app removal. Installed prerelease comparison now accepts this test version while continuing to reject prerelease update suggestions.
+
+27 frontend unit tests, 26 browser tests and 91 native assertions passed for this candidate. The progress browser fixture now waits for event-listener registration before emitting its first report. The unsigned test installer built from `1073265`, extracted app/helper versions matched 0.1.4-test.1, and the embedded-helper SHA-256 matched the build. The extracted helper rejected an unknown operation and successfully read real Windows status. The extracted app launched with the separate Update Controller Test window title. Package evidence is `.artifacts/test-build-verification.json`; the local test package is under `release/v0.1.4-test.1/`. Actual Windows update/policy/rule mutations and installer lifecycle remain untested. See [TESTING.md](TESTING.md) for deliberate test steps and shared-state boundaries.
+
+## Combined feature candidate, 4 October 2026
+
+Implemented the feature branches listed in [FEATURE-PRS.md](FEATURE-PRS.md), then combined them locally on `codex/feature-integration` and resolved shared workflow conflicts. All 26 frontend unit tests, 26 browser workflow/accessibility tests, and 91 helper assertions passed. Frontend/helper builds and offline Rust checking passed. The excluded-driver bulk-selection integration checks also passed after the final fix. Compact progress and earlier feature layouts were inspected.
+
+PowerShell signing and VM harness syntax parsed successfully. Missing signing tooling rejected before any build; an Install phase without a disposable-VM marker rejected before any helper request. These checks establish guard behavior, not real signing or servicing. A read-only helper status request succeeded after the async COM apartment change.
+
+Browser operations use controlled fixtures; native assertions use fake servicing and registry stores or isolated protocol/pipe checks. Actual WUA download/install progress, hardware metadata and driver-rule HKLM writes, journal persistence across crashes/reboots, installed Windows toast delivery, window monitor/DPI behavior, and installer lifecycle remain unverified. No host policy was changed and no Windows package was downloaded/installed or rebooted during this feature implementation. Signing infrastructure is ready for an operator-provided certificate; no signed release was generated or published.
+
+The combined unsigned desktop build succeeded from commit `f89dab3`. The installer was extracted without execution: app version 0.1.3 matched, embedded helper SHA-256 matched the published helper, and the extracted helper rejected an unknown command before elevation. Local package evidence is `.artifacts/integration-package-verification.json`. This is a branch candidate retaining the existing version, not a new public release.
+
+The historical release evidence below does not certify this candidate. Use the disposable VM acceptance procedure before release validation.
+
 ## 0.1.3 update automation
 
 2 October 2026. Added controller release suggestions, opt-in Windows update checks on startup, and opt-in installation of eligible Defender updates after checks. Defender eligibility is enforced in the elevated helper, including exact identities, accepted licenses, bundled components, pending restarts, and no-restart metadata.

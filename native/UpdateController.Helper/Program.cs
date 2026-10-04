@@ -13,7 +13,7 @@ internal static class Program
     [DllImport("kernel32.dll", SetLastError = true)] static extern bool GetNamedPipeServerProcessId(SafePipeHandle pipe, out uint pid);
     [DllImport("kernel32.dll", SetLastError = true)] static extern bool GetNamedPipeClientProcessId(SafePipeHandle pipe, out uint pid);
 
-    [STAThread]
+    [MTAThread]
     static int Main(string[] args)
     {
         try
@@ -48,7 +48,7 @@ internal static class Program
             if (line.Length > 100_000) throw new ArgumentException("Request too large.");
             var request = JsonSerializer.Deserialize<Request>(line, Protocol.Json) ?? throw new ArgumentException("Invalid request.");
             Protocol.Validate(request);
-            if (request.Command is "download" or "install" or "autoDefender" or "hide" or "unhide" or "enableManual" or "restorePolicy")
+            if (request.Command is "download" or "install" or "autoDefender" or "hide" or "unhide" or "enableManual" or "restorePolicy" or "excludeDriver" or "removeDriverRule")
                 Console.WriteLine(Elevate(request));
             else Console.WriteLine(Execute(request));
             return 0;
@@ -64,9 +64,12 @@ internal static class Program
             Protocol.Validate(request);
             object result = request.Command switch
             {
-                "status" => WindowsUpdates.Status(), "scan" => WindowsUpdates.Scan(), "history" => WindowsUpdates.History(), "notes" => ReleaseNotes.Fetch(request),
-                "review" => WindowsUpdates.Prepare(request), "enableManual" => Policy.Enable(), "restorePolicy" => Policy.Restore(),
-                "hide" or "unhide" => WindowsUpdates.SetHidden(request),
+                "status" => WindowsUpdates.Status(), "scan" => WindowsUpdates.Scan(), "history" => WindowsUpdates.History(), "reconcile" => WindowsUpdates.Reconcile(request), "notes" => ReleaseNotes.Fetch(request),
+                "review" => WindowsUpdates.Prepare(request), "enableManual" => WindowsUpdates.LogAction(request, Policy.Enable), "restorePolicy" => WindowsUpdates.LogAction(request, Policy.Restore),
+                "hide" or "unhide" => WindowsUpdates.LogAction(request, () => WindowsUpdates.SetHidden(request)),
+                "driverRules" => DriverRules.Read(),
+                "excludeDriver" => WindowsUpdates.LogAction(request, () => WindowsUpdates.ExcludeDriver(request)),
+                "removeDriverRule" => WindowsUpdates.LogAction(request, () => DriverRules.Remove(request.RuleId!)),
                 "appRelease" => AppRelease.Fetch(), "autoDefender" => WindowsUpdates.AutoDefender(request),
                 "download" or "install" => WindowsUpdates.Run(request), _ => throw new ArgumentException("Unknown operation.")
             };
@@ -94,7 +97,13 @@ internal static class Program
         if (reader.ReadLineAsync(connectTimeout.Token).AsTask().GetAwaiter().GetResult() != nonce) throw new Exception("Administrator helper authentication failed.");
         writer.WriteLine(Protocol.Serialize(request));
         // The worker persists its result before replying. A broken UI connection never restarts an operation.
-        return reader.ReadLine() ?? throw new Exception("Connection to the administrator helper ended. Check history before retrying.");
+        while (true)
+        {
+            var line = reader.ReadLine() ?? throw new Exception("Connection to the administrator helper ended. Check history before retrying.");
+            using var frame = JsonDocument.Parse(line);
+            if (frame.RootElement.TryGetProperty("event", out var kind) && kind.GetString() == "progress") { Console.WriteLine(line); continue; }
+            return line;
+        }
     }
 
     static int Worker(string pipeName, string nonce)
@@ -118,7 +127,8 @@ internal static class Program
         bool locked;
         try { locked = mutex.WaitOne(0); } catch (AbandonedMutexException) { locked = true; }
         if (!locked) { writer.WriteLine(Error(new Exception("Another update operation is already running."))); return 1; }
+        ProgressChannel.Sink = progress => { try { writer.WriteLine(Protocol.Serialize(new { @event = "progress", data = progress })); } catch (IOException) { ProgressChannel.Sink = null; } };
         try { var result = Execute(request); writer.WriteLine(result); return 0; }
-        finally { mutex.ReleaseMutex(); }
+        finally { ProgressChannel.Sink = null; mutex.ReleaseMutex(); }
     }
 }

@@ -12,18 +12,21 @@ export interface UpdatePackage {
   downloaded: boolean;
   hidden?: boolean;
   autoInstallEligible?: boolean;
+  driver?: { hardwareId: string | null; model: string | null; provider: string | null; manufacturer: string | null; class: string | null; versionDate: string | null } | null;
+  excluded?: boolean;
   restart: string;
   exclusive: boolean;
   eulaAccepted: boolean;
   bundles: string[];
 }
+export interface DriverRule { id: string; hardwareId: string; label: string; createdAt: string; }
 export interface Operation {
   id: string;
   action: string;
   state: string;
   startedAt: string;
   finishedAt: string | null;
-  results: { id: string; title: string; result: string; code?: string }[];
+  results: { id: string; title: string; result: string; code?: string | null; revision?: number | null; observedState?: string | null }[];
   restartRequired: boolean;
   message: string | null;
 }
@@ -62,5 +65,6 @@ export interface HistoryEntry {
 export interface HistoryResult {
   entries: HistoryEntry[];
   lastOperation: Operation | null;
+  operations?: Operation[];
 }
 export type Tab = "Updates" | "History" | "Settings";
