@@ -36,6 +36,8 @@ test("device exclusions require review and block replacement driver identities u
   await expect(page.getByRole("checkbox", { name: "Select Display driver" })).toHaveCount(0);
   await page.getByRole("button", { name: "Excluded", exact: true }).click();
   await expect(page.getByRole("checkbox", { name: "Select Display driver" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Select visible (0)", exact: true })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Select downloaded (0)", exact: true })).toBeDisabled();
   await page.getByRole("button", { name: "Settings", exact: true }).click();
   await page.getByRole("button", { name: "Remove exclusion for Display driver", exact: true }).click();
   await expect(page.getByRole("status")).toContainText("Device exclusion removed");

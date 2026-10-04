@@ -63,6 +63,7 @@ import type {
   SystemStatus,
   Tab,
   UpdateReview,
+  UpdatePackage,
 } from "./types";
 
 function Mark() {
@@ -178,7 +179,7 @@ export default function App() {
       saveScan(next);
       setStatus(await api.status());
       const unresolved = operation.results.filter(r => r.result !== "Succeeded");
-      const candidates = next.updates.filter(u => !u.hidden && unresolved.some(r => r.id === u.id && r.revision === u.revision) && (operation.action !== "download" || !u.downloaded));
+      const candidates = next.updates.filter(u => !u.hidden && !u.excluded && unresolved.some(r => r.id === u.id && r.revision === u.revision) && (operation.action !== "download" || !u.downloaded));
       setSelected(new Set(candidates.map(u => u.id)));
       setActiveId(candidates[0]?.id ?? null); setFilter("All"); setQuery(""); setTab("Updates");
       setNotice(candidates.length ? `${candidates.length} unresolved packages are available. Review the new selection before continuing; nothing was downloaded or installed.` : "No unresolved exact package revisions are available for retry. Inspect Windows history; replacement packages require a separate selection.");
@@ -225,6 +226,7 @@ export default function App() {
         .toLowerCase()
         .includes(query.toLowerCase()),
   ), sort);
+  const selectable = filtered.filter(u => !u.excluded);
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 60_000);
     return () => clearInterval(timer);
@@ -777,14 +779,14 @@ export default function App() {
                 </label>
               )}
               <div className="selection-tools" aria-label="Package selection tools">
-                <button className="text-link" disabled={!!busy || !filtered.length}
-                  onClick={() => setSelected(new Set(filtered.map(u => u.id)))}>
-                  Select visible ({filtered.length})
+                <button className="text-link" disabled={!!busy || !selectable.length}
+                  onClick={() => setSelected(new Set(selectable.map(u => u.id)))}>
+                  Select visible ({selectable.length})
                 </button>
                 {!hiddenView && <button className="text-link"
-                  disabled={!!busy || !filtered.some(u => u.downloaded)}
-                  onClick={() => setSelected(new Set(filtered.filter(u => u.downloaded).map(u => u.id)))}>
-                  Select downloaded ({filtered.filter(u => u.downloaded).length})
+                  disabled={!!busy || !selectable.some(u => u.downloaded)}
+                  onClick={() => setSelected(new Set(selectable.filter(u => u.downloaded).map(u => u.id)))}>
+                  Select downloaded ({selectable.filter(u => u.downloaded).length})
                 </button>}
                 <span className="muted">Replaces selection with matches in this view.</span>
               </div>

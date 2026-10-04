@@ -1,5 +1,15 @@
 # Validation and release status
 
+## Combined feature candidate, 4 October 2026
+
+Implemented the feature branches listed in [FEATURE-PRS.md](FEATURE-PRS.md), then combined them locally on `codex/feature-integration` and resolved shared workflow conflicts. All 26 frontend unit tests, 26 browser workflow/accessibility tests, and 91 helper assertions passed. Frontend/helper builds and offline Rust checking passed. The excluded-driver bulk-selection integration checks also passed after the final fix. Compact progress and earlier feature layouts were inspected.
+
+PowerShell signing and VM harness syntax parsed successfully. Missing signing tooling rejected before any build; an Install phase without a disposable-VM marker rejected before any helper request. These checks establish guard behavior, not real signing or servicing. A read-only helper status request succeeded after the async COM apartment change.
+
+Browser operations use controlled fixtures; native assertions use fake servicing and registry stores or isolated protocol/pipe checks. Actual WUA download/install progress, hardware metadata and driver-rule HKLM writes, journal persistence across crashes/reboots, installed Windows toast delivery, window monitor/DPI behavior, and installer lifecycle remain unverified. No host policy was changed and no Windows package was downloaded/installed or rebooted during this feature implementation. Signing infrastructure is ready for an operator-provided certificate; no signed release was generated or published.
+
+The historical release evidence below does not certify this candidate. Use the disposable VM acceptance procedure before release validation.
+
 ## 0.1.3 update automation
 
 2 October 2026. Added controller release suggestions, opt-in Windows update checks on startup, and opt-in installation of eligible Defender updates after checks. Defender eligibility is enforced in the elevated helper, including exact identities, accepted licenses, bundled components, pending restarts, and no-restart metadata.

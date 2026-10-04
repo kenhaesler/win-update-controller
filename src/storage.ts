@@ -12,6 +12,9 @@ export function loadTheme(): "dark" | "light" {
 const strings = (value: unknown): value is string[] =>
   Array.isArray(value) && value.every(item => typeof item === "string");
 const date = (value: unknown) => typeof value === "string" && Number.isFinite(Date.parse(value));
+const validDriver = (value: unknown) => value === undefined || value === null ||
+  (typeof value === "object" && ["hardwareId", "model", "provider", "manufacturer", "class", "versionDate"].every(
+    key => { const item = (value as Record<string, unknown>)[key]; return item === null || typeof item === "string"; }));
 export function validPackage(value: unknown): value is UpdatePackage {
   if (!value || typeof value !== "object") return false;
   const u = value as UpdatePackage;
@@ -25,6 +28,7 @@ export function validPackage(value: unknown): value is UpdatePackage {
     typeof u.eulaAccepted === "boolean" &&
     ["Not expected", "Required", "May be required"].includes(u.restart) &&
     (u.hidden === undefined || typeof u.hidden === "boolean") &&
+    (u.excluded === undefined || typeof u.excluded === "boolean") && validDriver(u.driver) &&
     (u.autoInstallEligible === undefined || typeof u.autoInstallEligible === "boolean");
 }
 export function loadScanCache(): ScanResult | null {

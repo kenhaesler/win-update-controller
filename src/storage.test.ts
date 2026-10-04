@@ -6,6 +6,8 @@ it("rejects incomplete, invalid and duplicate cached packages before rendering",
   const bad = [null, {}, { ...demoScan, checkedAt: "bad" },
     { ...demoScan, updates: [{ id: "bad", title: "bad", bundles: [], supportUrls: [] }] },
     { ...demoScan, updates: [demoScan.updates[0], demoScan.updates[0]] },
+    ...[true, { hardwareId: 12 }, { hardwareId: "PCI", model: null }].map(driver => ({ ...demoScan, updates: [{ ...demoScan.updates[0], driver }] })),
+    { ...demoScan, updates: [{ ...demoScan.updates[0], excluded: "yes" }] },
     ...["kbIds", "size", "revision", "restart"].map(key => ({ ...demoScan, updates: [{ ...demoScan.updates[0], [key]: null }] }))];
   for (const value of bad) {
     vi.stubGlobal("localStorage", { getItem: () => JSON.stringify(value) });
