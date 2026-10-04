@@ -46,4 +46,10 @@ describe("release comparison", () => {
     for (const tag of ["latest", "1.0.0-beta", "v1.0", "1.0.0/evil"])
       expect(() => newerVersion(tag, "0.1.2")).toThrow();
   });
+  it("accepts an installed test build while comparing only stable releases", () => {
+    expect(newerVersion("0.1.3", "0.1.4-test.1")).toBe(false);
+    expect(newerVersion("0.1.4", "0.1.4-test.1")).toBe(true);
+    expect(newerVersion("0.1.5", "0.1.4-test.1")).toBe(true);
+    expect(() => newerVersion("0.1.4", "0.1.4-test.01")).toThrow();
+  });
 });

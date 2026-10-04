@@ -1,5 +1,11 @@
 # Validation and release status
 
+## Isolated test candidate 0.1.4-test.1
+
+Prepared `codex/test-all-features` from the combined integration head after verifying ancestry of all 14 remote feature PR heads. Separate test product name, identifier, window title, and uninstall hook preserve stable-app settings and retain shared machine policy during test-app removal. Installed prerelease comparison now accepts this test version while continuing to reject prerelease update suggestions.
+
+27 frontend unit tests, 26 browser tests and 91 native assertions passed for this candidate. Actual Windows update/policy/rule mutations and installer lifecycle remain untested. See [TESTING.md](TESTING.md) for deliberate test steps and shared-state boundaries.
+
 ## Combined feature candidate, 4 October 2026
 
 Implemented the feature branches listed in [FEATURE-PRS.md](FEATURE-PRS.md), then combined them locally on `codex/feature-integration` and resolved shared workflow conflicts. All 26 frontend unit tests, 26 browser workflow/accessibility tests, and 91 helper assertions passed. Frontend/helper builds and offline Rust checking passed. The excluded-driver bulk-selection integration checks also passed after the final fix. Compact progress and earlier feature layouts were inspected.
