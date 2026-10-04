@@ -10,7 +10,11 @@ test("Windows progress reports package estimates and clears only after the final
     state.__TAURI_INTERNALS__ = {
       transformCallback: (fn: any) => { callbacks[++next] = fn; return next; }, unregisterCallback: () => {},
       invoke: async (cmd: string, args: any) => {
-        if (cmd === "plugin:event|listen") { listeners[args.event] = callbacks[args.handler]; return next; }
+        if (cmd === "plugin:event|listen") {
+          listeners[args.event] = callbacks[args.handler];
+          if (args.event === "operation-progress") state.progressListenerReady = true;
+          return next;
+        }
         if (cmd !== "windows_request") return 1;
         if (args.request.command === "status") return status;
         if (args.request.command === "appRelease") return { version: "0.1.3" };
@@ -25,7 +29,7 @@ test("Windows progress reports package estimates and clears only after the final
   await page.getByRole("checkbox", { name: "Select Windows security update" }).check();
   await page.getByRole("button", { name: "Review installation", exact: true }).click();
   await page.getByRole("button", { name: "Install these updates", exact: true }).click();
-  await page.waitForFunction(() => typeof (window as any).finishOperation === "function");
+  await page.waitForFunction(() => typeof (window as any).finishOperation === "function" && (window as any).progressListenerReady);
   const report = { operationId: "11111111-1111-1111-1111-111111111111", action: "install", percent: 25, currentPercent: 50, index: 1, count: 1, title: "Windows security update", bytesDownloaded: null, totalBytes: null, elapsedSeconds: 65 };
   await page.evaluate(report => (window as any).emitProgress(report), report);
   await expect(page.getByRole("progressbar", { name: "Overall update progress" })).toHaveAttribute("value", "25");

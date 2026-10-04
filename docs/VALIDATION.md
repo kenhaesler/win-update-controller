@@ -4,7 +4,7 @@
 
 Prepared `codex/test-all-features` from the combined integration head after verifying ancestry of all 14 remote feature PR heads. Separate test product name, identifier, window title, and uninstall hook preserve stable-app settings and retain shared machine policy during test-app removal. Installed prerelease comparison now accepts this test version while continuing to reject prerelease update suggestions.
 
-27 frontend unit tests, 26 browser tests and 91 native assertions passed for this candidate. Actual Windows update/policy/rule mutations and installer lifecycle remain untested. See [TESTING.md](TESTING.md) for deliberate test steps and shared-state boundaries.
+27 frontend unit tests, 26 browser tests and 91 native assertions passed for this candidate. The progress browser fixture now waits for event-listener registration before emitting its first report. The unsigned test installer built from `1073265`, extracted app/helper versions matched 0.1.4-test.1, and the embedded-helper SHA-256 matched the build. The extracted helper rejected an unknown operation and successfully read real Windows status. The extracted app launched with the separate Update Controller Test window title. Package evidence is `.artifacts/test-build-verification.json`; the local test package is under `release/v0.1.4-test.1/`. Actual Windows update/policy/rule mutations and installer lifecycle remain untested. See [TESTING.md](TESTING.md) for deliberate test steps and shared-state boundaries.
 
 ## Combined feature candidate, 4 October 2026
 
