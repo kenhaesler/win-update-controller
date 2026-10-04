@@ -1,3 +1,4 @@
+import { openToolbarMenu } from "./toolbar.helpers";
 import { test, expect } from "@playwright/test";
 import { demoScan, demoStatus } from "../src/demo";
 test("device exclusions require review and block replacement driver identities until removal", async ({ page }) => {
@@ -34,9 +35,12 @@ test("device exclusions require review and block replacement driver identities u
   await page.getByRole("button", { name: "Save device exclusion", exact: true }).click();
   await expect(page.getByRole("status")).toContainText("Device exclusion saved");
   await expect(page.getByRole("checkbox", { name: "Select Display driver" })).toHaveCount(0);
+  await openToolbarMenu(page, "More update filters");
   await page.getByRole("button", { name: "Excluded", exact: true }).click();
   await expect(page.getByRole("checkbox", { name: "Select Display driver" })).toBeDisabled();
+  await openToolbarMenu(page, "Package selection tools");
   await expect(page.getByRole("button", { name: "Select visible (0)", exact: true })).toBeDisabled();
+  await openToolbarMenu(page, "Package selection tools");
   await expect(page.getByRole("button", { name: "Select downloaded (0)", exact: true })).toBeDisabled();
   await page.getByRole("button", { name: "Settings", exact: true }).click();
   await page.getByRole("button", { name: "Remove exclusion for Display driver", exact: true }).click();

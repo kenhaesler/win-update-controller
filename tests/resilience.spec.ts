@@ -1,3 +1,4 @@
+import { openToolbarMenu } from "./toolbar.helpers";
 import { test, expect } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
 import { demoScan, demoStatus } from "../src/demo";
@@ -172,6 +173,7 @@ test("native hide partial failures preserve failed packages and cache successes"
   await expect(
     page.getByRole("checkbox", { name: "Select Windows security update" }),
   ).toHaveCount(0);
+  await openToolbarMenu(page, "More update filters");
   await page.getByRole("button", { name: "Hidden", exact: true }).click();
   await expect(
     page.getByRole("checkbox", { name: "Select Windows security update" }),

@@ -54,6 +54,7 @@ import { loadPolicyAlerts, policyChange } from "./policyChanges";
 import KnownIssueReview from "./KnownIssueReview";
 import ActivityLog from "./ActivityLog";
 import DriverExclusion from "./DriverExclusion";
+import ToolbarMenu from "./ToolbarMenu";
 import type {
   Category,
   HistoryResult,
@@ -740,7 +741,7 @@ export default function App() {
                 </p>
               </div>
               <div className="filters" aria-label="Filter updates">
-                {["All", "Security", "Drivers", "Optional", "Downloaded", "Excluded", "Hidden"].map(
+                {["All", "Security", "Drivers", "Optional"].map(
                   (f) => (
                     <button
                       key={f}
@@ -757,8 +758,14 @@ export default function App() {
                     </button>
                   ),
                 )}
+                <ToolbarMenu label={["Downloaded", "Excluded", "Hidden"].includes(filter) ? filter : "More"}
+                  accessibleLabel="More update filters" filter selected={["Downloaded", "Excluded", "Hidden"].includes(filter)} disabled={!!busy}>
+                  {["Downloaded", "Excluded", "Hidden"].map(f => <button key={f} aria-pressed={filter === f}
+                    disabled={!!busy} onClick={() => { setFilter(f); setSelected(new Set()); setActiveId(null); }}>{f}</button>)}
+                </ToolbarMenu>
               </div>
-              <label className="sort-control">Sort updates
+              <div className="list-tools">
+              <label className="sort-control"><span className="sr-only">Sort updates</span>
                 <select aria-label="Sort updates" value={sort} disabled={!!busy}
                   onChange={e => setSort(e.target.value as SortOrder)}>
                   <option value="default">Windows order</option>
@@ -767,6 +774,18 @@ export default function App() {
                   <option value="restart">Restart required first</option>
                 </select>
               </label>
+              <ToolbarMenu label="Select" accessibleLabel="Package selection tools" disabled={!!busy}>
+                <button disabled={!!busy || !selectable.length}
+                  onClick={() => setSelected(new Set(selectable.map(u => u.id)))}>
+                  Select visible ({selectable.length})
+                </button>
+                {!hiddenView && <button disabled={!!busy || !selectable.some(u => u.downloaded)}
+                  onClick={() => setSelected(new Set(selectable.filter(u => u.downloaded).map(u => u.id)))}>
+                  Select downloaded ({selectable.filter(u => u.downloaded).length})
+                </button>}
+                <p className="muted">Replaces selection with matches in this view.</p>
+              </ToolbarMenu>
+              </div>
               {packages.length > 5 && (
                 <label className="search">
                   <Search size={16} />
@@ -778,18 +797,6 @@ export default function App() {
                   />
                 </label>
               )}
-              <div className="selection-tools" aria-label="Package selection tools">
-                <button className="text-link" disabled={!!busy || !selectable.length}
-                  onClick={() => setSelected(new Set(selectable.map(u => u.id)))}>
-                  Select visible ({selectable.length})
-                </button>
-                {!hiddenView && <button className="text-link"
-                  disabled={!!busy || !selectable.some(u => u.downloaded)}
-                  onClick={() => setSelected(new Set(selectable.filter(u => u.downloaded).map(u => u.id)))}>
-                  Select downloaded ({selectable.filter(u => u.downloaded).length})
-                </button>}
-                <span className="muted">Replaces selection with matches in this view.</span>
-              </div>
               <div className="package-list">
                 {filtered.map((u) => (
                   <div

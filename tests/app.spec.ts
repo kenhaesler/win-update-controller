@@ -1,3 +1,4 @@
+import { openToolbarMenu } from "./toolbar.helpers";
 import { test, expect } from "@playwright/test";
 test("hidden updates stay excluded across checks and can be restored", async ({
   page,
@@ -15,6 +16,7 @@ test("hidden updates stay excluded across checks and can be restored", async ({
     .getByRole("button", { name: "Check for updates", exact: true })
     .click();
   await expect(page.getByRole("status")).toContainText("Found 2 available");
+  await openToolbarMenu(page, "More update filters");
   await page.getByRole("button", { name: "Hidden", exact: true }).click();
   await page.getByRole("checkbox", { name: "Select Display driver" }).check();
   await expect(

@@ -1,3 +1,4 @@
+import { openToolbarMenu } from "./toolbar.helpers";
 import { test, expect } from "@playwright/test";
 import { demoScan, demoStatus } from "../src/demo";
 test("cached results show age and a fresh scan highlights changed revisions", async ({ page }) => {
@@ -22,7 +23,9 @@ test("cached results show age and a fresh scan highlights changed revisions", as
   await page.getByRole("button", { name: "Check for updates", exact: true }).click();
   await expect(page.getByText(/Last checked · less than a minute ago/)).toBeVisible();
   await expect(page.getByLabel("New since previous check")).toHaveCount(1);
+  await openToolbarMenu(page, "More update filters");
   await page.getByRole("button", { name: "Downloaded", exact: true }).click();
+  await openToolbarMenu(page, "Package selection tools");
   await expect(page.getByRole("button", { name: "Select visible (0)", exact: true })).toBeDisabled();
   await page.getByRole("button", { name: "All", exact: true }).click();
   await page.screenshot({ path: "test-results/freshness-desktop.png" });
