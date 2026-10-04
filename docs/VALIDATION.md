@@ -8,6 +8,8 @@ PowerShell signing and VM harness syntax parsed successfully. Missing signing to
 
 Browser operations use controlled fixtures; native assertions use fake servicing and registry stores or isolated protocol/pipe checks. Actual WUA download/install progress, hardware metadata and driver-rule HKLM writes, journal persistence across crashes/reboots, installed Windows toast delivery, window monitor/DPI behavior, and installer lifecycle remain unverified. No host policy was changed and no Windows package was downloaded/installed or rebooted during this feature implementation. Signing infrastructure is ready for an operator-provided certificate; no signed release was generated or published.
 
+The combined unsigned desktop build succeeded from commit `f89dab3`. The installer was extracted without execution: app version 0.1.3 matched, embedded helper SHA-256 matched the published helper, and the extracted helper rejected an unknown command before elevation. Local package evidence is `.artifacts/integration-package-verification.json`. This is a branch candidate retaining the existing version, not a new public release.
+
 The historical release evidence below does not certify this candidate. Use the disposable VM acceptance procedure before release validation.
 
 ## 0.1.3 update automation
