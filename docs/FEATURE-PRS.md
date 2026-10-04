@@ -1,8 +1,8 @@
 # Feature PRs and integration
 
-Each requested feature has its own branch and pull request. PRs with shared prerequisites target that prerequisite branch to keep their diffs focused. Merge prerequisites before dependents and retarget dependents to main afterward. No GitHub PR has been merged by this implementation task.
+Each requested feature has its own branch and pull request. The 0.1.4 release includes all feature heads through the tested integration branch, plus test-build version handling and the refined list toolbar. The table records the original review bases.
 
-| PR | Branch | Base | Change |
+| PR | Branch | Original base | Change |
 | --- | --- | --- | --- |
 | [#1](https://github.com/kenhaesler/win-update-controller/pull/1) | codex/release-notes-request-isolation | main | Isolate late release-note requests |
 | [#2](https://github.com/kenhaesler/win-update-controller/pull/2) | codex/storage-robustness | main | Validate cache and tolerate unavailable storage |

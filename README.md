@@ -10,13 +10,9 @@ Licensed under the [MIT License](LICENSE). The software is provided **as is, wit
 
 This app changes Windows Update policy and can download and install system updates. Use it at your own risk: changes can cause instability, data loss, or reduced security if updates are deferred. Keep backups and review the [validation limitations](docs/VALIDATION.md) before use. There is no guarantee that the app will prevent every automatic update or restart. Third-party components retain their own licenses.
 
-## Test build
-
-This branch is the combined 0.1.4-test.1 candidate. See [TESTING.md](docs/TESTING.md) for the separate test app, installation, and suggested checks.
-
 ## Run
 
-Download the installer and checksum from the [latest GitHub release](https://github.com/kenhaesler/win-update-controller/releases/latest). Rebuilding produces `src-tauri/target/release/bundle/nsis/Update Controller Test_0.1.4-test.1_x64-setup.exe`. Install it and open **Update Controller** from Start. Installation goes to Program Files and requires administrator access. The UI itself runs unelevated. This development release is unsigned.
+Download the installer and checksum from the [latest GitHub release](https://github.com/kenhaesler/win-update-controller/releases/latest). Rebuilding produces `src-tauri/target/release/bundle/nsis/Update Controller_0.1.4_x64-setup.exe`. Install it and open **Update Controller** from Start. Installation goes to Program Files and requires administrator access. The UI itself runs unelevated. This development release is unsigned.
 
 1. Open **Settings** and inspect the current policy and pending-restart status.
 2. Choose **Enable manual mode** to back up the current policy and configure manual updating.
@@ -25,7 +21,7 @@ Download the installer and checksum from the [latest GitHub release](https://git
 5. Select checkboxes and **Download selected**. Review packages and any license terms.
 6. Select downloaded packages and choose **Review installation**. Installation is a separate deliberate action. The app never initiates a restart.
 
-To exclude unwanted packages such as monitor or USB drivers, select their checkboxes and choose **Hide selected**. Windows stores the hidden state across app and PC restarts. Use the **Hidden** filter and **Restore selected** to make them available again. Hide/restore requests administrator access and reports failures for each package; mandatory updates cannot be hidden. This applies to specific update identities, not every future driver for that device: a replacement published as a new update may appear. It cannot undo an installation already in progress or staged for restart. Hidden packages are excluded from the app's download and installation requests even if an older cached list still shows them.
+To exclude unwanted packages such as monitor or USB drivers, select their checkboxes and choose **Hide selected**. Windows stores the hidden state across app and PC restarts. Use the **Hidden** filter and **Restore selected** to make them available again. Hide/restore requests administrator access and reports failures for each package; mandatory updates cannot be hidden. Hide applies to specific update identities: a replacement published as a new update may appear. To exclude future drivers matching a hardware ID inside the controller, open the driver details and save a device exclusion. Review/remove these rules in Settings; they do not block independent Windows or vendor installers. It cannot undo an installation already in progress or staged for restart. Hidden packages are excluded from the app's download and installation requests even if an older cached list still shows them.
 
 ### Optional automation
 
@@ -42,6 +38,11 @@ The hide/restore UI and protocol are covered by automated tests; live Windows hi
 Closing the window during an operation keeps it running in the tray. Results are recorded before returning to the UI. If a process fails, inspect History and perform a fresh check before retrying; an unfinished journal is shown as uncertain, not successful.
 
 ## Implemented
+
+- Persistent controller activity, exact-revision recovery, searchable history and diagnostic export.
+- Hardware-ID driver exclusions, dated review reminders, cached-result age, new-package markers and sorting.
+- Known issues in installation review, actionable errors, detailed servicing progress and tray notifications.
+- System appearance, remembered window geometry, and a simplified filter/selection toolbar.
 
 - Graphite and light themes matching the approved mockup; master-detail and compact navigation, keyboard focus, reduced motion.
 - Real Windows Update Agent scans: identity/revision, descriptions, download state, classifications, bundled components, and restart requirements.

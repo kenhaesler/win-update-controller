@@ -1,5 +1,12 @@
 # Validation and release status
 
+## 0.1.4 release, 4 October 2026
+
+Merged the tested combined feature branch and refined toolbar into main. Restored the production app name, identifier/settings profile and normal installer/uninstall hooks; the separate test branch remains available. All version manifests now use 0.1.4.
+
+Release checks: 27 frontend unit tests, 27 browser workflow/accessibility tests and 91 helper assertions passed. The previously accepted live Windows servicing, reboot, signing, installed-notification, multi-monitor/DPI and installer lifecycle gaps remain. No host Windows package download/install, policy mutation or reboot was performed during release validation. The installer remains unsigned because no signing certificate/provider was available.
+
+
 ## Toolbar refinement for the test candidate
 
 Simplified the update-list toolbar after user feedback: four primary filters, secondary filters in More, and a single row for sorting and Select. Selection scope help appears only when the menu is open. All 27 browser tests passed, including secondary filters, bulk-selection semantics, Escape/outside-click handling, compact overflow and dark/light accessibility. Desktop, compact and menu layouts were inspected; layout detection returned no findings.
