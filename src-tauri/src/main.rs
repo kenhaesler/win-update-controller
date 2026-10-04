@@ -74,7 +74,9 @@ async fn windows_request(app: tauri::AppHandle, request: Value) -> Result<Value,
     };
     let app = app.clone();
     tauri::async_runtime::spawn_blocking(move || {
-        let _reset_tray = ResetTray(app.clone());
+        let _reset_tray = if matches!(request["command"].as_str(), Some("download" | "install" | "autoDefender")) {
+            Some(ResetTray(app.clone()))
+        } else { None };
         let mut child = Command::new(helper).creation_flags(0x08000000).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::null()).spawn().map_err(|e| format!("Could not start Windows helper: {e}"))?;
         let mut input = child.stdin.take().ok_or("Missing helper input")?;
         writeln!(input, "{}", request).map_err(|e| e.to_string())?;
